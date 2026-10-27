@@ -387,6 +387,7 @@ Done when the human uses termeownal for a day of normal DMs and restart is insta
 ---
 
 ## 16. When to stop and ask the human
+- **Effort level:** before starting a task where deeper reasoning would clearly improve the product, tell the human and suggest raising the reasoning effort (high or max). Examples: `core` interfaces, the event pump and durability, store schema and migrations, `secrets` crypto, ID mapping and `docs/ids.md`, resume/reconnect logic, concurrency bugs, upstream upgrades. Say when routine work (boilerplate, UI layout, mechanical edits) can drop back down.
 - A change would need real Instagram credentials or a live call to verify.
 - Upstream behaviour contradicts §6 or `docs/ids.md`.
 - An upgrade would spread upstream types beyond `backend/instagram`.
