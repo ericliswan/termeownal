@@ -1,0 +1,19 @@
+# Secrets and session data (AGENTS.md rule 6) — never commit these.
+*.enc
+cookies*.json
+session*
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+spike/secrets/
+spike/raw/
+
+# Build output
+/bin/
+/dist/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
