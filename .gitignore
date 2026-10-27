@@ -17,3 +17,6 @@ spike/raw/
 .DS_Store
 .idea/
 .vscode/
+
+# Local session notes (AGENTS.md §13)
+sessions/

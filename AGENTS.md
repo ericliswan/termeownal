@@ -83,6 +83,7 @@ termeownal/
 │       ├── overlay/              # help, new DM, errors, emoji picker
 │       └── theme/
 ├── spike/                        # Phase 0 throwaway; delete after Phase 0
+├── sessions/                     # local session summaries, git-ignored (§13)
 ├── docs/
 │   ├── ids.md                    # verified ID behaviour (Phase 0 output)
 │   └── architecture.md
@@ -363,6 +364,15 @@ Done when the human uses termeownal for a day of normal DMs and restart is insta
 - Import boundary holds.
 - Docs updated: this file if a rule, command or upstream detail changed; `ROADMAP.md` checkboxes; `docs/ids.md` if ID behaviour changed.
 - Summary to the human states what changed, how it was tested, and any manual checks they need to run against Instagram.
+
+### End of every session
+Write `sessions/YYYY-MM-DD-<short-slug>.md` (git-ignored, local only) with:
+- **Accomplished:** what landed, with branch and commit hashes.
+- **Findings:** anything learned that isn't in the docs yet.
+- **Open questions:** decisions waiting on the human.
+- **Next session:** the concrete first steps, and the suggested effort level.
+
+At the start of a session, read the newest file in `sessions/`. No credentials, real Instagram IDs, usernames or message text in these notes.
 
 ---
 
