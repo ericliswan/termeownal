@@ -511,7 +511,7 @@ Session cookies are equivalent to your password and skip 2FA.
 
 ### Phase 0 — Spike · 1–2 days
 Throwaway code in `spike/`. Goal: prove every core call works and learn the ID model.
-- [ ] Go 1.26+; new module; pin `mautrix-meta`; confirm `CGO_ENABLED=0 go build` works and note binary size.
+- [x] Go 1.26+; new module; pin `mautrix-meta`; confirm `CGO_ENABLED=0 go build` works and note binary size. *(Pinned `v0.2610.1-0.20261027123832-e82caa96720b`; needs upstream's `imroc/req` → `beeper/req` replace. Spike binary: 22 MB, 15 MB with `-ldflags="-s -w"`, darwin/arm64.)*
 - [ ] Load cookies from a local JSON file (gitignored) → `NewClient` → `LoadIndex` → print viewer name and every thread's `ThreadKey`, `ID`, `ThreadID`, title.
 - [ ] `PaginateMessages` (with `ThreadInfo.ID`) on one thread → print last 20 messages with `ContentType`.
 - [ ] `SendMessage` (with `ThreadInfo.ThreadID`) to a test thread; confirm the echo arrives with the same `OfflineThreadingID`.
