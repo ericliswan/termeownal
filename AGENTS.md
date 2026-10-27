@@ -321,7 +321,7 @@ New behaviour needs a test. Bug fixes start with a failing test.
 ## 11. Upgrading `mautrix-meta`
 Only when the task asks for it.
 1. Read upstream `CHANGELOG.md` and commits touching `pkg/instameow`, `pkg/messagix`, `pkg/igconnector` since the current pin.
-2. Bump the pin in `go.mod`; `go mod tidy`; `go build ./...`.
+2. Bump the pin in `go.mod`; copy any `replace` lines from upstream's `go.mod` (they aren't inherited; today `imroc/req/v3` → `beeper/req/v3`); `go mod tidy`; `go build ./...`.
 3. Fix compile errors **only** in `backend/instagram`. If a fix would leak into other packages, stop and ask.
 4. Update §6 of this file and `docs/ids.md` for anything that changed.
 5. Run all tests; list the manual smoke test for the human in your summary.
