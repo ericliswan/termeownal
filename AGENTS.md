@@ -260,18 +260,18 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - End-to-end encrypted chats are **not supported** by upstream, and Phase 0 couldn't create one to see how they appear. Label threads with an unfamiliar subtype or `input_mode` instead of failing silently.
 
 ### 7.5 Storage (`store`)
-SQLite via `modernc.org/sqlite`, numbered migrations, data dir from `adrg/xdg` (macOS: `~/Library/Application Support/termeownal`).
+SQLite via `modernc.org/sqlite`, numbered migrations, `cache.db` in the data dir from `adrg/xdg` (macOS: `~/Library/Application Support/termeownal`).
 
 | Table | Columns |
 |---|---|
 | `account` | `fbid` PK, `igid`, `username`, `display_name` |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
-| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
+| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `history_complete` |
 | `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
 | `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
-Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity_ms)`. Secrets never go in SQLite. Message text in the cache is plaintext; that's documented, not a bug.
+Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_activity_ms)`. Migration 1 creates only the columns Phase 1 uses; each later phase adds its columns, and the `reactions` table, in a new migration. A thread's cached messages are kept contiguous (a newest page that doesn't reach the cache drops the older cached ones), so the oldest cached message is the paging cursor. Secrets never go in SQLite. Message text in the cache is plaintext; that's documented, not a bug.
 
 ### 7.6 TUI
 - Layout: thread list (left), chat view (right), composer (bottom right), status bar.

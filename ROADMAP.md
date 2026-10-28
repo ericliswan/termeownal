@@ -415,12 +415,12 @@ SQLite file `cache.db` in termeownal's data directory. Paths: use `adrg/xdg` (or
 |---|---|
 | `account` | `fbid` PK, `igid`, `username`, `display_name` (seq ID lives in the session file, §6.3) |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
-| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
+| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `history_complete` |
 | `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
 | `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
-Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity_ms)`. Short and long thread IDs aren't stored: the adapter keeps them in memory (§4.5).
+Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_activity_ms)`. Migration 1 creates only the columns Phase 1 uses; each later phase adds its columns, and the `reactions` table, in a new migration. A thread's cached messages are kept contiguous (a newest page that doesn't reach the cache drops the older cached ones), so the oldest cached message is the paging cursor. Short and long thread IDs aren't stored: the adapter keeps them in memory (§4.5).
 
 The cache is **disposable** (`meow --reset-cache`). Secrets never go in it.
 
