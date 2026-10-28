@@ -43,7 +43,7 @@ Keep this section in sync with the `Makefile`.
 | Build | `go build ./...` |
 | Build static binary | `CGO_ENABLED=0 go build -o bin/meow ./cmd/meow` (`make static`) |
 | Run against the fake backend (no Instagram) | `go run ./cmd/meow --backend=fake` |
-| Run for real (human only) | `go run ./cmd/meow` / `meow login` |
+| Run for real (human only) | `go run ./cmd/meow` / `meow login` / `meow logout [--purge]` |
 | Test | `go test ./...` |
 | Test with race detector | `go test -race ./...` |
 | Lint | `golangci-lint run` |
@@ -61,7 +61,10 @@ Before finishing any task: `gofmt`, `go vet ./...`, `go test -race ./...` and `g
 
 ```
 termeownal/
-├── cmd/meow/main.go            # CLI: meow, meow login, meow logout, flags
+├── cmd/meow/
+│   ├── main.go                   # CLI: meow, meow login, meow logout, flags
+│   ├── login.go                  # login and logout
+│   └── console.go                # prompts, read in raw mode
 ├── internal/
 │   ├── app/                      # wiring, lifecycle state machine, event pump
 │   ├── core/                     # domain types, Backend, Authenticator, Event
@@ -241,7 +244,8 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - **Cookies (primary):** required `sessionid`, `csrftoken`, `ds_user_id`; optional `rur`, `shbid`, `shbts`, `mid`, `ig_did`.
 - Accept: a JSON object, a "Copy as cURL" command (parse its `Cookie:` header), or guided prompts with echo off.
 - Instructions shown to the user: use a Chromium-based browser (the library sends a fixed desktop-Chrome user agent), private window, copy cookies from DevTools, **close the window without logging out** (logging out kills `sessionid`).
-- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, save the session and call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs).
+- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), **then** save the session, so a new session never shows the old account's cache.
+- `cmd/meow/login.go` drives any `core.Authenticator`, so the fake one tests it. Answers are read in raw mode with bracketed paste: the terminal's line editor caps a line (1024 bytes on macOS), shorter than a cURL command. Enter inside a paste or after a `\` is a newline; Ctrl+C or Ctrl+D on an empty answer cancels.
 - **Password (Phase 4, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
 
 ### 7.2 Session storage (`secrets`)
@@ -250,7 +254,8 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - Key: random 256-bit, base64 in the OS keyring (`zalando/go-keyring`; service `termeownal`, account = the file's path). If the keyring fails → Argon2id (3 passes, 64 MiB, 4 lanes) from a passphrase read with echo off, typed twice when new.
 - `Load` at start (`ErrNoSession`, `ErrUnreadable`, `ErrWrongPassphrase`); `Create` after login, with a new key; `Save` reuses the key from `Load` or `Create`; `Delete` for logout.
 - It protects copies of the file, such as backups, not against programs running as the same user: they can read the keyring (on macOS the item trusts `/usr/bin/security`).
-- Known limits (`shortcut:`s in the package doc): a locked Linux keyring waits for its prompt with no timeout; nothing stops two `meow` processes using the file at once.
+- Known limits (`shortcut:`s in the package doc): a locked Linux keyring waits for its prompt with no timeout.
+- Every command except `--backend=fake` holds `secrets.Lock` (`meow.lock` in the data dir), so a second `meow` fails with `ErrLocked` instead of racing for the file.
 - Cookies change in place (`Cookies.UpdateFromResponse`) with no callback: snapshot `GetCookies()` every few minutes, on `Connected`, after login and on exit; rewrite only if changed.
 - `meow logout` deletes the file and keyring key; `--purge` also deletes the cache.
 
@@ -416,7 +421,6 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 - **Password login can hit browser-only checks**; cookie login is the reliable path.
 - **Cookies rotate silently** (§7.2).
 - `instameow` pulls in `mautrix/bridgev2` and `messagix`; that's expected.
-- **Don't run `go mod tidy` until `backend/instagram` imports `mautrix-meta`**: nothing imports it yet, so tidy drops the pin. Edit `go.mod` with `go get` / `go mod edit` instead.
 
 ---
 

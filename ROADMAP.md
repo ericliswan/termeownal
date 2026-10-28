@@ -536,7 +536,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
 - [x] `store` with migrations; app pump; cache-first startup.
 - [x] `secrets` (keyring + encrypted fallback).
-- [ ] `meow login` (cookie flow, all three input forms) and `meow logout`.
+- [x] `meow login` (cookie flow, all three input forms) and `meow logout`.
 - [ ] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
 - [ ] Optimistic send + echo reconciliation + retry.
 - [ ] Unread counts; mark read on focus.

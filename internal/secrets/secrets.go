@@ -31,10 +31,9 @@
 // timeout, so meow hangs where no prompt can show (e.g. over SSH); add a
 // timeout if that comes up.
 //
-// shortcut: nothing stops two meow processes using the file at once. The
-// last save wins, and after a Create in one, the other saves with a key
-// that's gone, so the file becomes unreadable; add a lock file with meow
-// login.
+// A File doesn't stop two processes using it at once, which would lose
+// saves or, after a Create, leave the file under a key that's gone. Callers
+// hold Lock while they use it.
 package secrets
 
 import (

@@ -30,8 +30,10 @@ const appName = "termeownal"
 type Paths struct {
 	// ConfigFile is the optional settings file.
 	ConfigFile string
-	// DataDir holds the message cache and the encrypted session file.
+	// DataDir holds the encrypted session file and the message cache.
 	DataDir string
+	// CacheFile is the message cache, in DataDir.
+	CacheFile string
 	// LogFile is the log, in the state directory.
 	LogFile string
 }
@@ -41,6 +43,7 @@ func DefaultPaths() Paths {
 	return Paths{
 		ConfigFile: filepath.Join(xdg.ConfigHome, appName, "config.toml"),
 		DataDir:    filepath.Join(xdg.DataHome, appName),
+		CacheFile:  filepath.Join(xdg.DataHome, appName, "cache.db"),
 		LogFile:    filepath.Join(xdg.StateHome, appName, "meow.log"),
 	}
 }
