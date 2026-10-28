@@ -16,6 +16,7 @@ require (
 	go.mau.fi/mautrix-meta v0.2610.1-0.20261027123832-e82caa96720b
 	go.mau.fi/util v0.11.1-0.20261026174803-9e6b9c87cfbc
 	golang.org/x/crypto v0.58.0
+	golang.org/x/term v0.47.0
 	modernc.org/sqlite v1.61.0
 )
 
