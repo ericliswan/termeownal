@@ -159,8 +159,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 			return m.fail(msg.Err), nil
 		}
-		st.Messages = merge(st.Messages, cleanThread(core.Thread{Messages: msg.Messages}).Messages)
-		st.more, st.fetched = msg.More, true
+		msgs, dropped := mergePage(st.Messages, cleanThread(core.Thread{Messages: msg.Messages}).Messages)
+		st.Messages = msgs
+		st.more, st.fetched = msg.More || dropped, true
 		m.refresh()
 	case ErrorMsg:
 		return m.fail(msg.Err), nil
@@ -286,9 +287,10 @@ func (m *Model) upsert(t core.Thread) {
 		m.threads[t.ID] = &threadState{Thread: t, more: true}
 		return
 	}
-	msgs := merge(st.Messages, t.Messages)
+	msgs, dropped := mergePage(st.Messages, t.Messages)
 	st.Thread = t
 	st.Messages = msgs
+	st.more = st.more || dropped
 }
 
 func (m *Model) addMessage(msg core.Message) {
@@ -360,6 +362,27 @@ func merge(have, msgs []core.Message) []core.Message {
 	}
 	slices.SortStableFunc(out, func(a, b core.Message) int { return a.At.Compare(b.At) })
 	return out
+}
+
+// mergePage merges page, consecutive messages from the server, into have.
+// If page doesn't reach back to a message in have, messages may be missing
+// between them, so the sent ones in have older than page are dropped, as the
+// store does; paging back loads them again. It reports whether any were
+// dropped.
+func mergePage(have, page []core.Message) ([]core.Message, bool) {
+	if len(page) == 0 {
+		return have, false
+	}
+	oldest := slices.MinFunc(page, func(a, b core.Message) int { return a.At.Compare(b.At) })
+	if slices.ContainsFunc(have, func(m core.Message) bool { return m.ID == oldest.ID }) {
+		return merge(have, page), false
+	}
+	// Compare as the store does, to the millisecond, so both drop the same ones.
+	kept := slices.DeleteFunc(slices.Clone(have), func(m core.Message) bool {
+		return m.State == core.Sent &&
+			cmp.Or(cmp.Compare(m.At.UnixMilli(), oldest.At.UnixMilli()), cmp.Compare(m.ID, oldest.ID)) < 0
+	})
+	return merge(kept, page), len(kept) < len(have)
 }
 
 // layout sizes the components to the terminal. Each pane has a 1-cell

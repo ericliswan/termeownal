@@ -77,6 +77,16 @@ func newFake(t *testing.T) *fake.Backend {
 	return b
 }
 
+// snapshot returns the backend's snapshot as a SnapshotMsg.
+func snapshot(t *testing.T, b core.Backend) SnapshotMsg {
+	t.Helper()
+	me, threads, err := b.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return SnapshotMsg{Me: me, Threads: threads}
+}
+
 // harness drives a Model by hand, running each returned command to
 // completion before the next message.
 type harness struct {
@@ -197,6 +207,29 @@ func TestMessageAddedTwiceChangesNothing(t *testing.T) {
 	h.do(msg)
 	if got := len(h.m.threads[id].Messages); got != n {
 		t.Fatalf("messages = %d after replay, want %d", got, n)
+	}
+}
+
+func TestSnapshotAcrossAGapDropsOlderMessages(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	id, _ := h.m.list.Selected()
+	n := len(h.m.threads[id].Messages)
+	h.do(snapshot(t, h.b))
+	if got := len(h.m.threads[id].Messages); got != n {
+		t.Fatalf("messages = %d after the same snapshot again, want %d", got, n)
+	}
+
+	h.m.threads[id].more = false
+	th := h.m.threads[id].Thread
+	th.Messages = []core.Message{{ID: "mid.after-gap", Thread: id, Sender: 101, At: testNow.Add(time.Hour), Text: "new"}}
+	for range 2 {
+		h.do(SnapshotMsg{Me: h.m.me, Threads: []core.Thread{th}})
+		if msgs := h.m.threads[id].Messages; len(msgs) != 1 || msgs[0].ID != "mid.after-gap" {
+			t.Fatalf("%d messages after a snapshot across a gap, want only the new one", len(msgs))
+		}
+	}
+	if !h.m.threads[id].more {
+		t.Error("dropped messages can't be loaded again")
 	}
 }
 
