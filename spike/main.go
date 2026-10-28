@@ -53,6 +53,7 @@ commands:
   listen [DURATION]          connect and print every event (default 5m; Ctrl+C to stop)
   markread SHORT_ID          GetThread, then MarkRead + MarkReadValidation on the newest message
   newdm USER_FBID            FetchThreadID + GetUserForNewDM
+  folder NAME                PaginateMailbox for one folder (e.g. PENDING = message requests)
 
 Every command except index resumes like the real app and prints the path taken:
   FAST = saved state + seq ID; delete state.json for WARM; delete state.json and seq.json for COLD.
@@ -172,6 +173,11 @@ func (s *spike) run(ctx context.Context, cmd string, args []string, long bool) e
 			return errors.New("usage: newdm USER_FBID")
 		}
 		return s.newDM(ctx, args[0])
+	case "folder":
+		if len(args) != 1 {
+			return errors.New("usage: folder NAME")
+		}
+		return s.folder(ctx, args[0])
 	}
 	return fmt.Errorf("unknown command %q", cmd)
 }
@@ -245,8 +251,8 @@ func printThread(w slidetypes.WrappedThreadInfo) {
 		fmt.Printf("- wrapper_id=%s (no as_ig_direct_thread)\n", w.ID)
 		return
 	}
-	fmt.Printf("- key=%d id=%s thread_fbid=%s thread_id=%s wrapper_id=%s group=%t subtype=%q input_mode=%d folder=%q title=%q\n",
-		t.ThreadKey, t.ID, t.ThreadFBID, t.ThreadID, w.ID, t.IsGroup, t.ThreadSubtype, t.InputMode, t.Folder, t.ThreadTitle)
+	fmt.Printf("- key=%d id=%s thread_fbid=%s thread_id=%s wrapper_id=%s group=%t subtype=%q input_mode=%d folder=%q system_folder=%q title=%q\n",
+		t.ThreadKey, t.ID, t.ThreadFBID, t.ThreadID, w.ID, t.IsGroup, t.ThreadSubtype, t.InputMode, t.Folder, t.SystemFolder, t.ThreadTitle)
 	for _, u := range t.Users {
 		fmt.Printf("    user igid=%s fbid=%d username=%s\n", u.ID, u.InteropMessagingUserFBID, u.Username)
 	}
@@ -432,6 +438,27 @@ func (s *spike) newDM(ctx context.Context, userFBID string) error {
 	if user.Data != nil {
 		fmt.Printf("user igid=%s fbid=%d username=%s\n", user.Data.ID, user.Data.InteropMessagingUserFBID, user.Data.Username)
 	}
+	return nil
+}
+
+func (s *spike) folder(ctx context.Context, name string) error {
+	if err := s.resume(ctx); err != nil {
+		return err
+	}
+	req := slidetypes.MakePaginateMailboxRequest(s.cli.GetOwnFBID(), "", name, nil)
+	req.Count = 20
+	resp, err := s.cli.PaginateMailbox(ctx, req)
+	if err != nil {
+		return fmt.Errorf("paginate mailbox %s: %w", name, err)
+	}
+	if resp.Mailbox == nil {
+		return errors.New("response has no mailbox")
+	}
+	fmt.Printf("# folder %s\n", name)
+	for _, e := range resp.Mailbox.ThreadsByFolder.Edges {
+		printThread(e.Node)
+	}
+	fmt.Printf("has_next_page=%t\n", resp.Mailbox.ThreadsByFolder.PageInfo.HasNextPage)
 	return nil
 }
 
