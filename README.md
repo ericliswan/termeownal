@@ -75,7 +75,7 @@ cd termeownal
 make static        # builds bin/meow
 ```
 
-There's no Instagram login yet, but you can try the UI with canned chats and no network:
+`meow login` saves an Instagram session and `meow logout` removes it, but meow can't use the session yet: the Instagram backend is still being written. Meanwhile you can try the UI with canned chats and no network:
 
 ```sh
 ./bin/meow --backend=fake
