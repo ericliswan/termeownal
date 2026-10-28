@@ -66,7 +66,7 @@ _Plan only — no code yet. Written against `mautrix/meta` `main` as of 27 Oct 2
 - Other networks (that would be Option B or new adapters).
 
 ### Known limitation
-- **End-to-end encrypted Instagram chats are not supported.** The bridge's feature list only covers encryption for Messenger; the Instagram connector has no E2EE code. Chats a user has switched to end-to-end encryption will be missing or unreadable. Phase 0 checks how they show up so the UI can label them instead of failing silently.
+- **End-to-end encrypted Instagram chats are not supported.** The bridge's feature list only covers encryption for Messenger; the Instagram connector has no E2EE code. Chats a user has switched to end-to-end encryption will be missing or unreadable. Phase 0 couldn't create one to test (`docs/ids.md` §9), so the UI labels any thread with an unfamiliar subtype or `input_mode` instead of failing silently.
 
 ---
 
@@ -122,7 +122,7 @@ Also: `LoadState(raw)` / `DumpState()` to save and restore reconnection state, `
 | Thread list / more threads | `GetMailbox`, `PaginateMailbox` | 1 |
 | Thread details | `GetThread(ctx, slidetypes.MakeGetThreadInfoRequest(id))` | 1 |
 | History | `PaginateMessages(&PaginateMessagesRequest{ThreadID, OlderThanMessageID, FirstN, …})` — `ThreadID` is the thread's **`ThreadInfo.ID`** (§4.5) | 1 |
-| Send text | `SendMessage(&SendTextRequest{IGThreadIGID, Text, OfflineThreadingID, ReplyToMessageID, …})` — `IGThreadIGID` is **`ThreadInfo.ThreadID`** | 1 |
+| Send text | `SendMessage(&SendTextRequest{IGThreadIGID, Text, OfflineThreadingID, ReplyToMessageID, …})` — `IGThreadIGID` is the short ID **`ThreadInfo.ID`** (the long ID also works); first message to a new user: `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID` | 1 |
 | Mark read | `MarkRead(&MarkReadRequest{Metadata{IGThreadIGID}, Data{MessageID, …}})`, then `MarkReadValidation` with the same request (upstream calls both) | 1 |
 | Typing out | `SetTyping(ctx, shortID, typing)` — `ThreadInfo.ID` | 2 |
 | Search people | `SearchUsers(ctx, query)` | 2 |
@@ -163,9 +163,9 @@ A thread has **three IDs that matter**, and each call wants a specific one. From
 
 | `ThreadInfo` field | Type | Upstream name | Used for |
 |---|---|---|---|
-| `ThreadKey` | int64 | FB thread key — the bridge's **primary key** for a chat | `FetchThreadID(ctx, threadKey)`; for 1:1 chats upstream uses the **other user's FBID** as the key |
-| `ID` | string | "short" ID (JSON `thread_fbid`; `ThreadIGIDs.ShortID`) | `PaginateMessagesRequest.ThreadID`, `GetThread`, `SetTyping`; **live deltas identify the thread by this** — the delta field is confusingly named `ThreadIGID` but its JSON is `thread_fbid`, with `Message.ThreadFBID` as fallback |
-| `ThreadID` | string | "long" IG thread ID (JSON `thread_igid`; `ThreadIGIDs.LongID`) | `SendTextRequest.IGThreadIGID`, `MarkReadMetadata.IGThreadIGID` |
+| `ThreadKey` | int64 | FB thread key — the bridge's **primary key** for a chat | `FetchThreadID(ctx, threadKey)`; for 1:1 chats the key is the **other user's FBID**; for groups it **equals the short ID** |
+| `ID` | string | "short" ID (JSON `id`, equal to `thread_fbid`; `ThreadIGIDs.ShortID`) | `PaginateMessagesRequest.ThreadID`, `GetThread`, `SendTextRequest.IGThreadIGID`, `SetTyping`; **live deltas identify the thread by this** — the delta field is confusingly named `ThreadIGID` but its JSON is `thread_fbid`, with `Message.ThreadFBID` as fallback |
+| `ThreadID` | string | "long" IG thread ID (JSON `thread_id`, 39 digits, keep as a string; `ThreadIGIDs.LongID`) | `MarkReadMetadata.IGThreadIGID`; incoming `TypingNotification.ThreadID` |
 
 Plan:
 - termeownal's `core.ThreadID` = **`ThreadKey`** (stable int64, matches upstream's choice).
@@ -173,8 +173,8 @@ Plan:
 - A delta for an unknown short ID → `GetThread` to learn its other IDs, store, then apply the delta (upstream: `ensurePortal` / `getAndResyncThread` in `handlemeta.go`, lookup via `GetFBIDForIGChat`).
 - **Never trust field names** here; trust the JSON tag and the table above.
 - Missing long/short ID for a known key → `FetchThreadID(ctx, threadKey)`.
-- Users: `core.UserID` = FBID (`SenderFBID`, `GetOwnFBID`), with IGID + username stored alongside (upstream: `PutFBIDForIGUser`).
-- Phase 0 confirms all of this against real responses and records it in `docs/ids.md`.
+- Users: `core.UserID` = FBID (`SenderFBID`, `GetOwnFBID`), with IGID + username stored alongside (upstream: `PutFBIDForIGUser`). Typing notifications carry the long ID and the sender's IGID, so keep long → key and IGID → FBID maps too.
+- Phase 0 verified all of this against real responses; `docs/ids.md` is the source of truth.
 
 ### 4.6 Reference code to read before writing each part
 
@@ -238,11 +238,12 @@ instameow goroutine ──handler──► adapter: translate ──► buffered
                                                               │
                                                     Bubble Tea update loop
 ```
-How upstream calls the handler (from `instameow/socket.go`): for each batch it calls the handler once per delta, **then** emits `SeqIDUpdate` with the new sequence ID. If the handler returns an error, the socket treats it as a failure and reconnects.
+How upstream calls the handler (from `instameow/socket.go`): for each batch it calls the handler once per delta, **then** emits one `SeqIDUpdate` with the new sequence ID. Live batches are usually one delta; the catch-up after connect is one large batch. If the handler returns an error, the socket treats it as a failure and reconnects.
 
 So:
 - The handler translates and pushes onto the channel. If the channel is full it **blocks** (respecting `ctx`) — never drop events. Blocking just slows the socket down, which is safe.
 - `SeqIDUpdate` goes through the **same channel** as the deltas, and the pump saves it only after the deltas before it are written. A crash then can never save a seq ID that is ahead of the stored messages; on restart the server replays from the last saved seq ID.
+- Delivery is therefore **at-least-once**, and the server also repeats some events (each `ReadReceipt` arrived twice during catch-up). Applying a delta twice must be harmless: upsert by message ID, keep the highest watermark, match echoes by OTID.
 - The handler returns an error only for real failures (e.g. `ctx` cancelled), not for unknown event types.
 - The pump is the **only writer** to the store for live events, so ordering is preserved.
 - UI actions (send, load history, search) run as `tea.Cmd` (off the UI goroutine) and return result messages.
@@ -369,14 +370,14 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 ## 8. Sending
 
 1. User presses Enter. App generates an **OTID** (offline threading ID) — upstream uses `methods.GenerateEpochID()` from `pkg/messagix/methods`; reuse it inside the adapter.
-2. Insert a local message: `send_state=pending`, `local_id=OTID`. UI shows it dimmed with "sending…".
-3. `tea.Cmd` calls `Backend.Send` → `SendMessage` with `IGThreadIGID` (from the ID map, §4.5), `Text`, `OfflineThreadingID`, and reply fields if replying.
+2. Insert a local message: `send_state=pending`, `otid=OTID`. UI shows it dimmed with "sending…".
+3. `tea.Cmd` calls `Backend.Send` → `SendMessage` with `IGThreadIGID` set to the short ID (from the ID map, §4.5), `Text`, `OfflineThreadingID`, and reply fields if replying.
 4. Success: keep pending until the echo arrives.
 5. Echo: `NewMessageEvent` whose `Message.OfflineThreadingID` == OTID → replace local row with the real message ID, `send_state=sent`.
 6. Failure, or no echo within ~30 s: `send_state=failed`; UI shows "failed — `r` to retry". Retry reuses the **same OTID** so a late echo still matches and no duplicate appears.
-7. New DM: upstream keys a 1:1 chat by the other user's FBID. Look up the existing DM with `FetchThreadID(ctx, userFBID)`; if it returns `ErrThreadNotFound`, show an empty chat (user info from `GetUserForNewDM`) and create the thread on first send. Follow `igconnector/startchat.go` (`ResolveIdentifier`) and the send path in `handlematrix.go` for the exact request fields (`RecipientIGIDs` etc.) — confirm in Phase 0.
+7. New DM: upstream keys a 1:1 chat by the other user's FBID. Look up the existing DM with `FetchThreadID(ctx, userFBID)`; if it returns `ErrThreadNotFound`, show an empty chat (user info from `GetUserForNewDM`) and create the thread on first send: `SendMessage` with `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID`. The echo carries a short ID we haven't seen; call `FetchThreadID(ctx, userFBID)` again to learn the thread's IDs. Verified in Phase 0 (`docs/ids.md` §6).
 
-Text limits: strip trailing whitespace; reject empty; warn above Instagram's message length limit (confirm the limit in Phase 0).
+Text limits: strip trailing whitespace; reject empty; warn above Instagram's message length limit (still unknown; find it in Phase 1).
 
 ---
 
@@ -385,7 +386,7 @@ Text limits: strip trailing whitespace; reject empty; warn above Instagram's mes
 `slidetypes.Message` has `ContentType`, `Content` (`MessageContentWrapper`), `TextBody`, `IGDSnippet`, `RepliedToMessage`, `Reactions`, `SlideEditHistory`, `IGDIsForwarded`, `ExpirationTimestampMS`, etc.
 
 Plan:
-- Phase 1: render `TextBody`; for anything else render `IGDSnippet` or a bracketed label from `ContentType`. Collect every `ContentType` value you see in a debug log to build the mapping.
+- Phase 1: render `TextBody`; for anything else render a bracketed label from `ContentType` (`IGDSnippet` is empty in history). Skip `REACTION_LOG_XMAT` entries; they are reaction log lines, not messages. Collect every `ContentType` value you see in a debug log to build the mapping.
 - Phase 2+: proper mapping table, e.g.
 
 | Content | Render |
@@ -414,7 +415,7 @@ SQLite file `cache.db` in termeownal's data directory. Paths: use `adrg/xdg` (or
 | `threads` | `thread_key` PK, `short_id` (`ThreadInfo.ID`), `long_id` (`ThreadInfo.ThreadID`), `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
 | `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
 | `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
-| `reactions` | `message_id`, `user_fbid`, `emoji` |
+| `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
 Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity_ms)`, unique `threads(long_id)` and `threads(short_id)` for delta lookups.
 
@@ -495,7 +496,7 @@ Session cookies are equivalent to your password and skip 2FA.
 - **Pin** `go.mau.fi/mautrix-meta` to a specific commit (pseudo-version) in `go.mod`.
 - **Toolchain:** upstream's `go.mod` says `go 1.26.0`, so termeownal needs **Go 1.26 or newer** (Go raises termeownal's own `go` line to match when you add the dependency). Upstream's `toolchain go1.27.2` line does **not** apply to you — `toolchain` lines in dependencies are ignored.
 - **Isolation:** only `internal/backend/instagram` imports `go.mau.fi/mautrix-meta/...` or `maunium.net/go/mautrix/...` (enforce with a `depguard` lint rule or a small test that scans imports).
-- **Dependency weight:** `instameow` pulls in `mautrix/bridgev2` and much of `messagix`. In Phase 0, check binary size and that `CGO_ENABLED=0 go build` works (the `instameow` + `messagix` packages themselves have no cgo; transitive modules are unverified).
+- **Dependency weight:** `instameow` pulls in `mautrix/bridgev2` and much of `messagix`. Phase 0 confirmed `CGO_ENABLED=0 go build` works; the spike binary was 22 MB (15 MB stripped) on darwin/arm64.
 - **Upgrade checklist** (do it deliberately, e.g. monthly or when something breaks):
   1. Read the bridge's `CHANGELOG.md` and recent commits touching `pkg/instameow` and `pkg/igconnector`.
   2. Bump the pin; `go build ./...`.
@@ -512,15 +513,15 @@ Session cookies are equivalent to your password and skip 2FA.
 ### Phase 0 — Spike · 1–2 days
 Throwaway code in `spike/`. Goal: prove every core call works and learn the ID model.
 - [x] Go 1.26+; new module; pin `mautrix-meta`; confirm `CGO_ENABLED=0 go build` works and note binary size. *(Pinned `v0.2610.1-0.20261027123832-e82caa96720b`; needs upstream's `imroc/req` → `beeper/req` replace. Spike binary: 22 MB, 15 MB with `-ldflags="-s -w"`, darwin/arm64.)*
-- [ ] Load cookies from a local JSON file (gitignored) → `NewClient` → `LoadIndex` → print viewer name and every thread's `ThreadKey`, `ID`, `ThreadID`, title.
-- [ ] `PaginateMessages` (with `ThreadInfo.ID`) on one thread → print last 20 messages with `ContentType`.
-- [ ] `SendMessage` (with `ThreadInfo.ThreadID`) to a test thread; confirm the echo arrives with the same `OfflineThreadingID`.
-- [ ] `Connect` → log every event type for a few minutes while you message from your phone (text, reaction, edit, unsend, typing, read). Note which thread ID each delta carries.
-- [ ] `MarkRead` + `MarkReadValidation`; confirm it clears on the phone.
-- [ ] Resume paths: restart with saved state + seq ID (fast), seq ID only (`ReloadIndex`), and nothing (`LoadIndex`).
-- [ ] Find a new-DM target with `FetchThreadID(userFBID)`; send a first message to someone with no existing thread.
-- [ ] Check how an end-to-end encrypted chat (if the test account has one) appears in the mailbox and deltas.
-- [ ] Write `docs/ids.md`: which ID each call takes and returns.
+- [x] Load cookies from a local JSON file (gitignored) → `NewClient` → `LoadIndex` → print viewer name and every thread's `ThreadKey`, `ID`, `ThreadID`, title.
+- [x] `PaginateMessages` (with `ThreadInfo.ID`) on one thread → print last 20 messages with `ContentType`.
+- [x] `SendMessage` to a test thread; confirm the echo arrives with the same `OfflineThreadingID`. *(Short and long ID both work, 1:1 and group; we send with the short ID.)*
+- [x] `Connect` → log every event type for a few minutes while you message from your phone (text, reaction, edit, unsend, typing, read). Note which thread ID each delta carries.
+- [x] `MarkRead` + `MarkReadValidation`; confirm it clears on the phone.
+- [x] Resume paths: restart with saved state + seq ID (fast), seq ID only (`ReloadIndex`), and nothing (`LoadIndex`).
+- [x] Find a new-DM target with `FetchThreadID(userFBID)`; send a first message to someone with no existing thread.
+- [x] Check how an end-to-end encrypted chat (if the test account has one) appears in the mailbox and deltas. *(Couldn't create one; see `docs/ids.md` §9.)*
+- [x] Write `docs/ids.md`: which ID each call takes and returns.
 
 **Done when:** list, read, send, receive and resume all work from the spike. If something fundamental fails here, reconsider Option B before building more.
 
@@ -614,10 +615,10 @@ termeownal/
 | Layer | How |
 |---|---|
 | Adapter conversion | Feed scrubbed recorded `slidetypes` JSON from `testdata/` → assert `core` types/events |
-| ID mapping | Table tests for every combination seen in Phase 0 |
+| ID mapping | Table tests for every case in `docs/ids.md`, including an unknown short ID in a delta |
 | Store | In-memory SQLite; migration up from empty and from each prior version |
 | Send reconciliation | Fake backend: echo arrives / arrives late / never arrives / duplicate echo |
-| Durability | Seq ID never persisted before its preceding deltas; a full event channel blocks instead of dropping |
+| Durability | Seq ID never persisted before its preceding deltas; a full event channel blocks instead of dropping; a replayed delta applied twice changes nothing |
 | Resume paths | Fast / warm / cold start against a fake upstream |
 | UI | `teatest` driving keys against `backend/fake`, golden snapshots of the screen |
 | Secrets | Fallback encrypt/decrypt round-trip; wrong passphrase fails cleanly |
@@ -638,7 +639,7 @@ termeownal/
 | Upstream `instameow` API changes | High / Medium | Pin; single adapter package; upgrade checklist (§13) |
 | Instagram changes its private API | Medium / Medium | Wait for upstream fix; bump pin |
 | ID confusion causes sends to wrong thread | Low / High | Phase 0 ID study; ID map tests; show thread name in composer |
-| End-to-end encrypted Instagram chats can't be read (bridge doesn't support them) | Certain / Medium | Document it; label such chats in the UI if they appear (Phase 0 finds out how) |
+| End-to-end encrypted Instagram chats can't be read (bridge doesn't support them) | Certain / Medium | Document it; label threads with an unfamiliar subtype or `input_mode` (Phase 0 couldn't create one to test) |
 | Password login hits captcha / browser-only checks | High / Low | Cookie login is the primary path; password login is best effort |
 | Saving a seq ID ahead of stored data loses messages after a crash | Low / Medium | Seq ID goes through the same ordered queue as deltas (§5.4) |
 | Long sessions drift / miss events | Medium / Low | Resnapshot handling; gap-fill on reconnect; optional periodic refresh |
@@ -655,7 +656,7 @@ termeownal/
 - [ ] Mark-as-read behavior: on open, or only after scrolling to bottom?
 - [ ] Encrypt the cache in v1, or document and defer?
 - [ ] Which terminals to officially support for inline images?
-- [ ] Instagram's message length limit (confirm in Phase 0).
+- [ ] Instagram's message length limit (not found in Phase 0; check in Phase 1).
 
 ---
 
