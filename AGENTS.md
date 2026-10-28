@@ -370,7 +370,7 @@ Write `sessions/YYYY-MM-DD-<short-slug>.md` (git-ignored, local only) with:
 - **Accomplished:** what landed, with branch and commit hashes.
 - **Findings:** anything learned that isn't in the docs yet.
 - **Open questions:** decisions waiting on the human.
-- **Next session:** the concrete first steps, and the suggested effort level.
+- **Next session:** the concrete first steps, and the suggested effort level (§16).
 
 At the start of a session, read the newest file in `sessions/`. No credentials, real Instagram IDs, usernames or message text in these notes.
 
@@ -397,12 +397,21 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 ---
 
 ## 16. When to stop and ask the human
-- **Effort level:** before starting a task where deeper reasoning would clearly improve the product, tell the human and suggest raising the reasoning effort (high or max). Examples: `core` interfaces, the event pump and durability, store schema and migrations, `secrets` crypto, ID mapping and `docs/ids.md`, resume/reconnect logic, concurrency bugs, upstream upgrades. Say when routine work (boilerplate, UI layout, mechanical edits) can drop back down.
+- **Effort level:** at the start of **every** task, tell the human which reasoning effort to use — **medium**, **high**, **extra high** or **max** (table below) — with a one-line reason. You can't change your own level; the human sets it. If a task turns out harder or easier than it looked (a "simple" fix is really a race), say so and recommend the new level.
 - A change would need real Instagram credentials or a live call to verify.
 - Upstream behaviour contradicts §6 or `docs/ids.md`.
 - An upgrade would spread upstream types beyond `backend/instagram`.
 - You want to add a dependency, change the license, or change a hard rule.
 - The task is ambiguous about scope, or touches something hard to undo (deleting user data, migrations that drop columns).
+
+| Level | Use for | Examples |
+|---|---|---|
+| **medium** | Routine, mechanical, easy to check | boilerplate, Makefile/CI, UI layout and styling, golden-file updates, renames, doc edits, ROADMAP ticks, spike scripts |
+| **high** | Normal feature work with some design choices | UI components with state, config, store queries, `convert.go`, login input parsing, content-type mapping, `backend/fake` features, bug fixes with a known cause |
+| **extra high** | Design other code builds on; mistakes spread | `core` interfaces and events, store schema and migrations, `ids.go` and `docs/ids.md`, send reconciliation, resume/reconnect, the lifecycle state machine |
+| **max** | Subtle correctness or security; hard to test, costly to get wrong | the event pump and durability, concurrency bugs and races, `secrets` crypto, upstream upgrades (§11), pre-release security review |
+
+Torn between two levels: pick the higher one if the task touches a hard rule (§2) or the security checklist (§8), otherwise the lower one.
 
 ---
 
