@@ -124,6 +124,8 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 
 ### 5.2 Concurrency
 - **One pump goroutine** in `app` reads `Backend.Events()` in order, writes to the store, then calls `program.Send(...)`. It is the only writer for live events.
+- The pump shows the cache, then stores and shows `Backend.Snapshot`, and only then asks for `Connect`; it does the same after `ResyncNeeded`. `Snapshot` runs on the pump goroutine, so it must never wait for `Events` to be read.
+- After a failed store write the pump saves no more seq IDs that run, so the next start replays what the cache missed.
 - All network calls from the UI run as `tea.Cmd`s, never inside `Update`.
 - Never mutate UI model state from any goroutine other than Bubble Tea's.
 - Every blocking call takes a `context.Context` and respects cancellation.
@@ -193,10 +195,10 @@ Rules:
 ### 6.5 Resume logic (mirror `igconnector/client.go` → `connectWithRetry`)
 1. Show cached threads from SQLite immediately.
 2. Build the client with saved cookies; `SetSeqID` if saved.
-3. **Fast:** saved state, `LoadState` succeeds, `HasSeqID()` → `Connect`.
-   **Warm:** seq ID but state unusable (`ErrCachedStateTooOld` after 24 h) → `ReloadIndex`, save `DumpState()`, `Connect`.
-   **Cold:** no seq ID → `LoadIndex`, apply mailbox, save state, `Connect`.
-4. After `Connected`, refresh the mailbox in the background (`GetMailbox`) and gap-fill the open thread.
+3. **Fast:** saved state, `LoadState` succeeds, `HasSeqID()`.
+   **Warm:** seq ID but state unusable (`ErrCachedStateTooOld` after 24 h) → `ReloadIndex`, save `DumpState()`.
+   **Cold:** no seq ID → `LoadIndex`, save state.
+4. Store a fresh mailbox, **then** `Connect`: the pump stores `Backend.Snapshot` (`LoadIndex`'s mailbox on a cold start, otherwise `GetMailbox`) before it asks for a connection, so live events always apply on top of it. Don't refresh the mailbox in the background after `Connected`: it would race the replay. After `Connected`, gap-fill the open thread.
 5. `ErrPleaseReloadPage` → delete saved state, cold start.
 6. Force a full reconnect every 20 h (config `force_refresh_interval`, 0 disables), never more than once an hour. `ForceReconnect()` on detected sleep/wake (wall-clock jump > 2 min).
 7. Reconnect backoff when the library gives up: 1 s doubling to 60 s, with jitter.
@@ -238,7 +240,7 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - **Cookies (primary):** required `sessionid`, `csrftoken`, `ds_user_id`; optional `rur`, `shbid`, `shbts`, `mid`, `ig_did`.
 - Accept: a JSON object, a "Copy as cURL" command (parse its `Cookie:` header), or guided prompts with echo off.
 - Instructions shown to the user: use a Chromium-based browser (the library sends a fixed desktop-Chrome user agent), private window, copy cookies from DevTools, **close the window without logging out** (logging out kills `sessionid`).
-- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure.
+- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, save the session and call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs).
 - **Password (Phase 4, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
 
 ### 7.2 Session storage (`secrets`)

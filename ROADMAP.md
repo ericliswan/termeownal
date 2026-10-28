@@ -212,7 +212,7 @@ Plan:
 | Method | Returns | Notes |
 |---|---|---|
 | `Restore(ctx, Session)` | error | Builds client from saved cookies/state and seq ID |
-| `Snapshot(ctx)` | `me User`, `[]Thread`, error | Wraps `LoadIndex` / `GetMailbox`; threads carry their newest messages |
+| `Snapshot(ctx)` | `me User`, `[]Thread`, error | Wraps `LoadIndex` / `GetMailbox`; threads carry their newest messages. Runs on the pump goroutine, so it must not wait for `Events` to be read |
 | `History(ctx, thread, before, n)` | `[]Message` (oldest first), more bool, error | `PaginateMessages` |
 | `NewOTID()` | string | `methods.GenerateEpochID()`; the app needs the OTID before sending (§8) |
 | `Send(ctx, thread, text, otid)` | error | `SendMessage` |
@@ -290,7 +290,7 @@ Instagram cookies needed (from `cookies.IGRequiredCookies` / `IGOptionalCookies`
    - guided prompts, one cookie at a time, **with echo off**
 3. Check required cookies present (the cookies package can report missing ones).
 4. Build `cookies.Cookies{Platform: types.Instagram}`, create client, call `LoadIndex`.
-5. On success: show "Logged in as *name* (@username)", save session (§6.3), seed cache from the returned mailbox.
+5. On success: show "Logged in as *name* (@username)", save session (§6.3), seed cache from the returned mailbox. Seeding starts with `store.SetMe`, which clears another account's cache: `meow` shows the cache before it syncs.
 6. On failure: map the error (§6.4), don't save anything.
 
 Input is read from the terminal with no echo; never accept cookies via command-line flags or env vars by default.
@@ -338,10 +338,10 @@ Mirror upstream's three-tier resume (`igconnector/client.go`, `connectWithRetry`
 1. Render threads from SQLite immediately (works offline).
 2. Create the client with saved cookies, then `SetSeqID(savedSeq, savedTS)` if one exists.
 3. Pick a path:
-   - **Fast resume** — saved state exists, `LoadState` succeeds (it rejects state older than 24 h with `ErrCachedStateTooOld`) and `HasSeqID()` → go straight to `Connect`. The server replays everything missed since the seq ID.
-   - **Warm resume** — seq ID but no usable state → `ReloadIndex`, save the new `DumpState()`, then `Connect`.
-   - **Cold start** — no seq ID (first run, or after a reset) → `LoadIndex`, apply the mailbox snapshot (threads, latest messages, users), save state, then `Connect`.
-4. After `Connected`, refresh the mailbox in the background with `GetMailbox` so titles and unread counts reconcile with anything the delta replay didn't cover. (Upstream skips this; it's cheap for us and keeps the list honest.)
+   - **Fast resume** — saved state exists, `LoadState` succeeds (it rejects state older than 24 h with `ErrCachedStateTooOld`) and `HasSeqID()`. On `Connect` the server replays everything missed since the seq ID.
+   - **Warm resume** — seq ID but no usable state → `ReloadIndex`, save the new `DumpState()`.
+   - **Cold start** — no seq ID (first run, or after a reset) → `LoadIndex`, save state.
+4. Store a fresh mailbox snapshot (threads, latest messages, users), **then** `Connect`. The pump calls `Backend.Snapshot` (`LoadIndex`'s mailbox on a cold start, otherwise `GetMailbox`), stores and shows it, and only then asks for a connection, as in the lifecycle (§5.5). Titles and unread counts reconcile with anything the delta replay doesn't cover. (Upstream skips the refresh on resume; it's cheap for us and keeps the list honest.) It comes before `Connect`, not in the background after `Connected`, so live events always apply on top of it: a mailbox fetched while the replay is being applied could overwrite newer state with older. The cost is one request before live events start, while the cached threads are already on screen.
 5. For the thread currently open: fetch the newest page with `PaginateMessages` to fill any gap.
 
 On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
@@ -362,8 +362,8 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 
 ### 7.3 Reconnects and resyncs
 - On `Disconnected`: status "reconnecting"; rely on the library's reconnect, plus our own backoff (1 s → 2 → 4 … max 60 s, with jitter) if it gives up.
-- After reconnect: refresh mailbox, gap-fill the open thread.
-- On `ResnapshotRequired`: full mailbox refresh; reset seq ID as upstream does (see `FullReconnect`).
+- After reconnect: refresh mailbox, gap-fill the open thread. The mailbox must be stored before live events resume, as in §7.1, or it races the replay.
+- On `ResnapshotRequired`: full mailbox refresh; reset seq ID as upstream does (see `FullReconnect`). The pump stores the new snapshot before it connects again (§7.1).
 - **Periodic refresh:** upstream forces a full reconnect every **20 hours** by default (`force_refresh_interval_seconds: 72000`), and never does full reconnects more often than once an hour (`min_full_reconnect_interval_seconds: 3600`). The saved state also expires after 24 h. termeownal copies these defaults: `force_refresh_interval` is a setting (0 disables), the one-hour floor is a constant.
 - Detect system sleep/wake (wall clock jump > 2 min between ticks) → `ForceReconnect()`.
 - Always persist `SeqIDUpdate` / `ReconnectionStateUpdate` (through the pump, in order — §5.4) so restarts resume cheaply.
@@ -534,7 +534,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `core` types, `Backend`, `Authenticator`, `Event`.
 - [x] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
 - [x] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
-- [ ] `store` with migrations; app pump; cache-first startup.
+- [x] `store` with migrations; app pump; cache-first startup.
 - [ ] `secrets` (keyring + encrypted fallback).
 - [ ] `meow login` (cookie flow, all three input forms) and `meow logout`.
 - [ ] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
