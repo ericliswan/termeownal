@@ -532,7 +532,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] Repo skeleton (§15), AGPL-3.0 license, CI (build + test + lint). *(Package directories are created as each package lands.)*
 - [x] `config` + XDG paths + file logging.
 - [x] `core` types, `Backend`, `Authenticator`, `Event`.
-- [ ] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
+- [x] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
 - [ ] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
 - [ ] `store` with migrations; app pump; cache-first startup.
 - [ ] `secrets` (keyring + encrypted fallback).
