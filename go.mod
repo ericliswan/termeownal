@@ -3,6 +3,8 @@ module termeownal
 go 1.26.0
 
 require (
+	github.com/BurntSushi/toml v1.6.0
+	github.com/adrg/xdg v0.5.3
 	github.com/rs/zerolog v1.35.1
 	go.mau.fi/mautrix-meta v0.2610.1-0.20261027123832-e82caa96720b
 	go.mau.fi/util v0.11.1-0.20261026174803-9e6b9c87cfbc
