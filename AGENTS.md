@@ -49,6 +49,7 @@ Keep this section in sync with the `Makefile`.
 | Lint | `golangci-lint run` |
 | Format | `gofmt -w . && goimports -w .` |
 | Update UI golden files | `go test ./internal/ui/... -update` |
+| Record the README demo GIF (needs `vhs`, fake backend) | `make demo` |
 
 Requirements: **Go 1.26 or newer** (upstream's `go.mod` declares `go 1.26.0`; its `toolchain` line doesn't apply to us). Pure Go — no cgo. SQLite is `modernc.org/sqlite`.
 
