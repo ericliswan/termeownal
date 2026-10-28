@@ -33,6 +33,12 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 </p>
 <p align="center"><sub>The UI so far, running with <code>--backend=fake</code>: canned chats, no network.</sub></p>
 
+<p align="center">
+  <img alt="termeownal's thread list, with the chat pane waiting for a thread to be opened" src="assets/screenshots/threads.svg" width="49%">
+  <img alt="termeownal's help overlay listing the keyboard shortcuts" src="assets/screenshots/help.svg" width="49%">
+</p>
+<p align="center"><sub>The thread list, and the key help you get with <code>?</code></sub></p>
+
 <!--
   Demo GIF: once the app is further along, run `make demo` (needs vhs) to
   record docs/demo.tape into assets/demo.gif, then swap the image above for:
