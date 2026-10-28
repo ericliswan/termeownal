@@ -18,11 +18,33 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
+
+	"termeownal/internal/app"
+	"termeownal/internal/config"
 )
 
 func main() {
-	fmt.Fprintln(os.Stderr, "meow: not implemented yet")
-	os.Exit(1)
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "meow:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	paths := config.DefaultPaths()
+	cfg, err := config.Load(paths.ConfigFile)
+	if err != nil {
+		return err
+	}
+	log, logFile, err := app.OpenLog(paths.LogFile, cfg.LogLevel)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = logFile.Close() }()
+
+	log.Info().Str("config", paths.ConfigFile).Msg("meow starting")
+	return errors.New("not implemented yet")
 }
