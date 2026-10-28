@@ -533,7 +533,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `config` + XDG paths + file logging.
 - [x] `core` types, `Backend`, `Authenticator`, `Event`.
 - [x] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
-- [ ] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
+- [x] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
 - [ ] `store` with migrations; app pump; cache-first startup.
 - [ ] `secrets` (keyring + encrypted fallback).
 - [ ] `meow login` (cookie flow, all three input forms) and `meow logout`.

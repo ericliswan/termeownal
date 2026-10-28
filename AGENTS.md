@@ -407,6 +407,7 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 - **Password login can hit browser-only checks**; cookie login is the reliable path.
 - **Cookies rotate silently** (§7.2).
 - `instameow` pulls in `mautrix/bridgev2` and `messagix`; that's expected.
+- **Don't run `go mod tidy` until `backend/instagram` imports `mautrix-meta`**: nothing imports it yet, so tidy drops the pin. Edit `go.mod` with `go get` / `go mod edit` instead.
 
 ---
 
