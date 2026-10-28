@@ -126,7 +126,7 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.2 Concurrency
 - **One pump goroutine** in `app` reads `Backend.Events()` in order, writes to the store, then calls `program.Send(...)`. It is the only writer for live events.
 - The pump shows the cache, then stores and shows `Backend.Snapshot`, and only then asks for `Connect`; it does the same after `ResyncNeeded`. `Snapshot` runs on the pump goroutine, so it must never wait for `Events` to be read.
-- After a failed store write the pump saves no more seq IDs that run, so the next start replays what the cache missed.
+- The pump also saves the session: the seq ID once the deltas before it are stored, and `ExportAuth` on `SessionChanged` and after `Events` closes. After a failed store write it saves no more seq IDs that run, so the next start replays what the cache missed; login data is still saved, with the last good seq ID.
 - All network calls from the UI run as `tea.Cmd`s, never inside `Update`.
 - Never mutate UI model state from any goroutine other than Bubble Tea's.
 - Every blocking call takes a `context.Context` and respects cancellation.
@@ -245,8 +245,12 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - **Password (Phase 4, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
 
 ### 7.2 Session storage (`secrets`)
-- One file `session.enc` (cookies, `DumpState()` blob, seq ID + timestamp) in the data dir, mode `0600`, XChaCha20-Poly1305, written atomically (temp + rename).
-- Key: random 256-bit, stored in the OS keyring (`zalando/go-keyring`). No keyring → Argon2id from a passphrase prompted at start.
+- One file `session.enc` (cookies, `DumpState()` blob, seq ID + timestamp) in the data dir, mode `0600`, written atomically (temp + rename; the rename isn't synced, so a power cut can undo the last save but never leaves a mix).
+- Format: a 46-byte header (`MEOW`, version 1, key kind, 16-byte salt, 24-byte nonce), then XChaCha20-Poly1305 over a JSON payload. The header is the additional data, so it's authenticated too.
+- Key: random 256-bit, base64 in the OS keyring (`zalando/go-keyring`; service `termeownal`, account = the file's path). If the keyring fails → Argon2id (3 passes, 64 MiB, 4 lanes) from a passphrase read with echo off, typed twice when new.
+- `Load` at start (`ErrNoSession`, `ErrUnreadable`, `ErrWrongPassphrase`); `Create` after login, with a new key; `Save` reuses the key from `Load` or `Create`; `Delete` for logout.
+- It protects copies of the file, such as backups, not against programs running as the same user: they can read the keyring (on macOS the item trusts `/usr/bin/security`).
+- Known limits (`shortcut:`s in the package doc): a locked Linux keyring waits for its prompt with no timeout; nothing stops two `meow` processes using the file at once.
 - Cookies change in place (`Cookies.UpdateFromResponse`) with no callback: snapshot `GetCookies()` every few minutes, on `Connected`, after login and on exit; rewrite only if changed.
 - `meow logout` deletes the file and keyring key; `--purge` also deletes the cache.
 

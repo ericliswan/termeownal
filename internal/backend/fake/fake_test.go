@@ -112,6 +112,10 @@ func TestNeedsRestore(t *testing.T) {
 	if got, err := b.ExportAuth(); err != nil || string(got) != string(auth) {
 		t.Errorf("ExportAuth = %q, %v", got, err)
 	}
+	b.Close()
+	if got, err := b.ExportAuth(); err != nil || string(got) != string(auth) {
+		t.Errorf("ExportAuth after Close = %q, %v", got, err)
+	}
 }
 
 func TestSnapshot(t *testing.T) {

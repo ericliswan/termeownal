@@ -70,7 +70,7 @@ func run() error {
 			return err
 		}
 		defer func() { _ = st.Close() }()
-		return app.Run(ctx, b, st, log)
+		return app.Run(ctx, b, st, core.Session{}, nil, log)
 	case "instagram":
 		return errors.New("the Instagram backend isn't implemented yet; try --backend=fake")
 	default:

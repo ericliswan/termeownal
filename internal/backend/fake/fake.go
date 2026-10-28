@@ -249,12 +249,12 @@ func (b *Backend) connectErr(ctx context.Context) error {
 // Events returns the event channel. Close closes it.
 func (b *Backend) Events() <-chan core.Event { return b.events }
 
-// ExportAuth returns the auth passed to Restore.
+// ExportAuth returns the auth passed to Restore, even after Close.
 func (b *Backend) ExportAuth() (core.AuthData, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if err := b.readyLocked(); err != nil {
-		return nil, err
+	if b.auth == nil {
+		return nil, fmt.Errorf("fake: not restored: %w", core.ErrSessionExpired)
 	}
 	return slices.Clone(b.auth), nil
 }

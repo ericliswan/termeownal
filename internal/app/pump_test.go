@@ -203,14 +203,14 @@ func TestSeqSavedOnlyAfterItsEvents(t *testing.T) {
 	p, b, rec := newTestPump(t)
 	var mu sync.Mutex
 	var saved []int64
-	p.saveSeq = func(ctx context.Context, ev core.SeqAdvanced) error {
+	p.save = func(s core.Session) error {
 		// The fake sends one message per seq ID, so seq ID n needs n stored.
-		if n, err := countLive(ctx, p.st); err != nil || int64(n) != ev.SeqID {
-			t.Errorf("seq ID %d saved with %d live messages stored (err %v)", ev.SeqID, n, err)
+		if n, err := countLive(context.Background(), p.st); err != nil || int64(n) != s.SeqID {
+			t.Errorf("seq ID %d saved with %d live messages stored (err %v)", s.SeqID, n, err)
 		}
 		mu.Lock()
 		defer mu.Unlock()
-		saved = append(saved, ev.SeqID)
+		saved = append(saved, s.SeqID)
 		return nil
 	}
 	start(t, p)
@@ -320,7 +320,7 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 func TestNoSeqSavedAfterAFailedWrite(t *testing.T) {
 	p, b, rec := newTestPump(t)
 	var saves atomic.Int32
-	p.saveSeq = func(context.Context, core.SeqAdvanced) error {
+	p.save = func(core.Session) error {
 		saves.Add(1)
 		return nil
 	}
@@ -337,6 +337,50 @@ func TestNoSeqSavedAfterAFailedWrite(t *testing.T) {
 	}
 	if n := len(sentOf[ui.ErrorMsg](rec.sent())); n != 1 {
 		t.Errorf("showed %d errors, want only the first", n)
+	}
+}
+
+func TestSessionChangedSavesTheLogin(t *testing.T) {
+	p, b, _ := newTestPump(t)
+	ctx := context.Background()
+	var saved []core.Session
+	p.session = core.Session{SeqID: 7}
+	p.save = func(s core.Session) error {
+		saved = append(saved, s)
+		return nil
+	}
+	p.failed = true // as after a failed write, so 7 is the last good seq ID
+	p.apply(ctx, core.SeqAdvanced{SeqID: 8, At: testNow})
+	p.apply(ctx, core.SessionChanged{})
+	assertSavedLogin(t, b, saved)
+}
+
+func TestSessionSavedAtExit(t *testing.T) {
+	p, b, _ := newTestPump(t)
+	var saved []core.Session
+	p.session = core.Session{SeqID: 7}
+	p.save = func(s core.Session) error {
+		saved = append(saved, s)
+		return nil
+	}
+	b.Close() // so run returns once it has tried to sync
+	p.run(context.Background())
+	assertSavedLogin(t, b, saved)
+}
+
+// assertSavedLogin fails unless saved is one session with b's login data and
+// seq ID 7.
+func assertSavedLogin(t *testing.T, b *fake.Backend, saved []core.Session) {
+	t.Helper()
+	auth, err := b.ExportAuth()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(saved) != 1 {
+		t.Fatalf("saved %d sessions, want 1", len(saved))
+	}
+	if got := saved[0]; string(got.Auth) != string(auth) || got.SeqID != 7 {
+		t.Errorf("saved seq ID %d, login data matches %v; want seq ID 7 and the backend's login data", got.SeqID, string(got.Auth) == string(auth))
 	}
 }
 

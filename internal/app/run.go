@@ -32,15 +32,16 @@ import (
 )
 
 // Run shows the UI until the user quits, keeping the cache st in sync with
-// the restored backend b, then closes b.
-func Run(ctx context.Context, b core.Backend, st *store.Store, log zerolog.Logger) error {
+// the backend b, restored from session s, then closes b. save, if not nil,
+// saves the session as it changes: the seq ID once the events before it are
+// stored, and the login data on SessionChanged and at exit.
+func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st}, time.Now), tea.WithContext(ctx))
 
-	// shortcut: the seq ID and SessionChanged aren't saved, so every start
-	// syncs from scratch; save them in session.enc once secrets lands.
 	p := newPump(b, st, prog, log)
+	p.session, p.save = s, save
 	var wg sync.WaitGroup
 	wg.Go(func() { p.run(ctx) })
 	wg.Go(func() { p.connectLoop(ctx) })

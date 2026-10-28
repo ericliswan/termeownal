@@ -45,8 +45,10 @@ type pump struct {
 	ui  uiSender
 	log zerolog.Logger
 
-	// saveSeq saves the sync position; nil saves nothing.
-	saveSeq func(context.Context, core.SeqAdvanced) error
+	// session is the session to save: the restored one, then updated by
+	// SeqAdvanced and SessionChanged. save saves it; nil saves nothing.
+	session core.Session
+	save    func(core.Session) error
 	// connect asks connectLoop to connect. sync sends on it once a snapshot
 	// is stored, so the events that follow apply on top of the snapshot.
 	connect chan struct{}
@@ -73,6 +75,10 @@ func (p *pump) run(ctx context.Context) {
 	for ev := range p.b.Events() {
 		p.apply(ctx, ev)
 		p.ui.Send(ev)
+	}
+	// Login data can change without a SessionChanged, so save it once more.
+	if err := p.saveAuth(); err != nil {
+		p.log.Warn().Err(err).Msg("final session save failed")
 	}
 }
 
@@ -110,10 +116,16 @@ func (p *pump) apply(ctx context.Context, ev core.Event) {
 	case core.ThreadRead:
 		err = p.st.MarkRead(ctx, ev.Thread, ev.Until)
 	case core.SeqAdvanced:
-		if !p.failed && p.saveSeq != nil {
-			if err := p.saveSeq(ctx, ev); err != nil {
-				p.report(ctx, fmt.Errorf("save sync position: %w", err))
+		if !p.failed {
+			p.session.SeqID, p.session.SeqAt = ev.SeqID, ev.At
+			if err := p.saveSession(); err != nil {
+				p.report(ctx, err)
 			}
+		}
+	case core.SessionChanged:
+		// Saved even after a failed write: it keeps the last good seq ID.
+		if err := p.saveAuth(); err != nil {
+			p.report(ctx, err)
 		}
 	case core.ResyncNeeded:
 		p.sync(ctx)
@@ -121,6 +133,29 @@ func (p *pump) apply(ctx context.Context, ev core.Event) {
 	if err != nil {
 		p.writeFailed(ctx, err)
 	}
+}
+
+// saveAuth saves the backend's current login data with the seq ID.
+func (p *pump) saveAuth() error {
+	if p.save == nil {
+		return nil
+	}
+	auth, err := p.b.ExportAuth()
+	if err != nil {
+		return fmt.Errorf("export session: %w", err)
+	}
+	p.session.Auth = auth
+	return p.saveSession()
+}
+
+func (p *pump) saveSession() error {
+	if p.save == nil {
+		return nil
+	}
+	if err := p.save(p.session); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+	return nil
 }
 
 // writeFailed stops seq IDs being saved and reports the first failure.
