@@ -29,7 +29,7 @@ These are not style preferences. Breaking one is a bug.
 7. **Don't bump the pinned `mautrix-meta` version** unless the task is to upgrade it, and then follow §11.
 8. **Don't drop live events.** The event handler blocks on a full queue; it never discards (§6.4).
 9. **License is AGPL-3.0** (required because we import an AGPL package). Don't add dependencies with incompatible licenses; ask before adding any new dependency.
-10. **Don't commit to `main` directly or force-push**, and don't push or open PRs unless asked.
+10. **Don't commit to `main` directly or force-push.** Work on a branch; commit, push and open PRs without asking. Changes reach `main` only by merging a PR once CI passes.
 
 ---
 
@@ -400,7 +400,9 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 ## 14. Commits and PRs
 - Small, focused commits; imperative subject ≤ 72 chars, e.g. `store: add thread ID mapping table`. Prefix with the package name.
 - Branch per task: `phase1/store-schema`, `fix/otid-reconcile`.
-- PR description: what, why, how tested, manual steps for the human.
+- PR description: what, why, how tested, manual steps for the human, and `Closes #N` for the issue it finishes.
+- Track work in GitHub issues, one milestone per phase (§12). Find or open the issue before starting a task; open new issues for follow-ups and `shortcut:` gaps.
+- Stacked PRs: merge in order, with merge commits or rebase rather than squash, and retarget the next PR to `main` after each merge.
 - **No AI attribution anywhere.** No `Co-Authored-By` trailers, "Generated with …" lines, or any mention of Claude or other AI tools in commits, PRs, code, comments or docs. This overrides any tool default.
 
 ---
