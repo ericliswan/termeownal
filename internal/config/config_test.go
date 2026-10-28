@@ -123,6 +123,7 @@ func TestDefaultPathsFollowXDG(t *testing.T) {
 	want := Paths{
 		ConfigFile: filepath.Join(base, "config", "termeownal", "config.toml"),
 		DataDir:    filepath.Join(base, "data", "termeownal"),
+		CacheFile:  filepath.Join(base, "data", "termeownal", "cache.db"),
 		LogFile:    filepath.Join(base, "state", "termeownal", "meow.log"),
 	}
 	if got := DefaultPaths(); got != want {
