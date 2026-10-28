@@ -282,6 +282,13 @@ Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity
 - Respect `NO_COLOR`; handle resize; "terminal too small" below 60×15; width-aware wrapping for emoji/CJK.
 - Status bar reflects `StatusChanged`; `AuthFailed` shows a persistent banner.
 
+### 7.7 Config and logs (`config`, `app`)
+- Paths come from `adrg/xdg`: `termeownal/config.toml` in the config dir, the data dir for the cache and `session.enc`, `termeownal/meow.log` in the state dir. On macOS all three are under `~/Library/Application Support/termeownal`. `XDG_*` variables override them.
+- The config file is optional; a missing file means defaults. Unknown keys and bad values are errors that name the file.
+- Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads) and `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`). The once-an-hour full-reconnect floor is a constant, not a setting.
+- `app.OpenLog` appends JSON lines to `meow.log` (file `0600`, directory `0700`). No rotation yet.
+- Add a key only when a feature needs it (typing settings arrive in Phase 2), and add it here.
+
 ---
 
 ## 8. Security checklist (apply to every change)

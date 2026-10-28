@@ -364,7 +364,7 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 - On `Disconnected`: status "reconnecting"; rely on the library's reconnect, plus our own backoff (1 s → 2 → 4 … max 60 s, with jitter) if it gives up.
 - After reconnect: refresh mailbox, gap-fill the open thread.
 - On `ResnapshotRequired`: full mailbox refresh; reset seq ID as upstream does (see `FullReconnect`).
-- **Periodic refresh:** upstream forces a full reconnect every **20 hours** by default (`force_refresh_interval_seconds: 72000`), and never does full reconnects more often than once an hour (`min_full_reconnect_interval_seconds: 3600`). The saved state also expires after 24 h. Copy these defaults into termeownal's config; 0 disables.
+- **Periodic refresh:** upstream forces a full reconnect every **20 hours** by default (`force_refresh_interval_seconds: 72000`), and never does full reconnects more often than once an hour (`min_full_reconnect_interval_seconds: 3600`). The saved state also expires after 24 h. termeownal copies these defaults: `force_refresh_interval` is a setting (0 disables), the one-hour floor is a constant.
 - Detect system sleep/wake (wall clock jump > 2 min between ticks) → `ForceReconnect()`.
 - Always persist `SeqIDUpdate` / `ReconnectionStateUpdate` (through the pump, in order — §5.4) so restarts resume cheaply.
 
@@ -530,7 +530,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 
 ### Phase 1 — MVP · 1–2 weeks
 - [x] Repo skeleton (§15), AGPL-3.0 license, CI (build + test + lint). *(Package directories are created as each package lands.)*
-- [ ] `config` + XDG paths + file logging.
+- [x] `config` + XDG paths + file logging.
 - [x] `core` types, `Backend`, `Authenticator`, `Event`.
 - [ ] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
 - [ ] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
