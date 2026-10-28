@@ -40,13 +40,6 @@ func clock() time.Time { return testNow }
 // backendActions runs Actions synchronously against a backend, like app does.
 type backendActions struct{ b core.Backend }
 
-func (a backendActions) Snapshot() tea.Cmd {
-	return func() tea.Msg {
-		me, threads, err := a.b.Snapshot(context.Background())
-		return SnapshotMsg{Me: me, Threads: threads, Err: err}
-	}
-}
-
 func (a backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
 	return func() tea.Msg {
 		msgs, more, err := a.b.History(context.Background(), thread, before, n)
@@ -77,6 +70,16 @@ func newFake(t *testing.T) *fake.Backend {
 	return b
 }
 
+// snapshot is the SnapshotMsg app sends once the backend's snapshot is stored.
+func snapshot(t *testing.T, b core.Backend) SnapshotMsg {
+	t.Helper()
+	me, threads, err := b.Snapshot(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return SnapshotMsg{Me: me, Threads: threads}
+}
+
 // harness drives a Model by hand, running each returned command to
 // completion before the next message.
 type harness struct {
@@ -90,7 +93,7 @@ func newHarness(t *testing.T, w, h int) *harness {
 	b := newFake(t)
 	hs := &harness{t: t, b: b, m: New(backendActions{b}, clock)}
 	hs.do(tea.WindowSizeMsg{Width: w, Height: h})
-	hs.run(hs.m.Init())
+	hs.do(snapshot(t, b))
 	return hs
 }
 
@@ -200,6 +203,29 @@ func TestMessageAddedTwiceChangesNothing(t *testing.T) {
 	}
 }
 
+func TestSnapshotAcrossAGapDropsOlderMessages(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	id, _ := h.m.list.Selected()
+	n := len(h.m.threads[id].Messages)
+	h.do(snapshot(t, h.b))
+	if got := len(h.m.threads[id].Messages); got != n {
+		t.Fatalf("messages = %d after the same snapshot again, want %d", got, n)
+	}
+
+	h.m.threads[id].more = false
+	th := h.m.threads[id].Thread
+	th.Messages = []core.Message{{ID: "mid.after-gap", Thread: id, Sender: 101, At: testNow.Add(time.Hour), Text: "new"}}
+	for range 2 {
+		h.do(SnapshotMsg{Me: h.m.me, Threads: []core.Thread{th}})
+		if msgs := h.m.threads[id].Messages; len(msgs) != 1 || msgs[0].ID != "mid.after-gap" {
+			t.Fatalf("%d messages after a snapshot across a gap, want only the new one", len(msgs))
+		}
+	}
+	if !h.m.threads[id].more {
+		t.Error("dropped messages can't be loaded again")
+	}
+}
+
 func TestUnreadOnlyWhenNotOpen(t *testing.T) {
 	h := newHarness(t, 100, 30)
 	h.press("enter")
@@ -278,6 +304,7 @@ func TestIncomingTextCantInjectEscapes(t *testing.T) {
 func TestRunsInProgram(t *testing.T) {
 	b := newFake(t)
 	tm := teatest.NewTestModel(t, New(backendActions{b}, clock), teatest.WithInitialTermSize(100, 30))
+	tm.Send(snapshot(t, b))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool { return bytes.Contains(out, []byte("Cat Café Crew")) },
 		teatest.WithDuration(5*time.Second))
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})

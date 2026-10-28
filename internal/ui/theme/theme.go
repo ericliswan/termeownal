@@ -21,12 +21,13 @@ import "charm.land/lipgloss/v2"
 
 // Colours. Bubble Tea downgrades them to what the terminal supports and
 // drops them entirely under NO_COLOR, so nothing may depend on colour alone.
+// The palette is greyscale; statuses differ by glyph and text, not hue.
 var (
-	Accent = lipgloss.Color("#C084FC")
-	Subtle = lipgloss.Color("#6B7280")
-	Error  = lipgloss.Color("#F87171")
-	OK     = lipgloss.Color("#4ADE80")
-	Warn   = lipgloss.Color("#FBBF24")
+	Accent = lipgloss.Color("#F5F5F5")
+	Subtle = lipgloss.Color("#737373")
+	Error  = lipgloss.Color("#F5F5F5")
+	OK     = lipgloss.Color("#F5F5F5")
+	Warn   = lipgloss.Color("#A3A3A3")
 )
 
 // Styles shared across components.

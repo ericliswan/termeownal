@@ -1,4 +1,4 @@
-.PHONY: build static test race lint fmt check
+.PHONY: build static test race lint fmt check demo
 
 build:
 	go build ./...
@@ -24,3 +24,7 @@ check:
 	go vet ./...
 	go test -race ./...
 	golangci-lint run
+
+# Records the README demo against the fake backend (needs vhs).
+demo: static
+	vhs docs/demo.tape
