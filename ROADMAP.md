@@ -482,7 +482,7 @@ The cache is **disposable** (`meow --reset-cache`). Secrets never go in it.
 
 Session cookies are equivalent to your password and skip 2FA.
 
-- **Storage:** all session secrets (cookies, saved state, seq ID) live in one file, `session.enc` in termeownal's data directory, mode `0600`, encrypted with XChaCha20-Poly1305 (`golang.org/x/crypto/chacha20poly1305`). The 256-bit key is random and stored in the OS keyring. Fallback when there's no keyring (e.g. headless Linux without Secret Service): derive the key from a passphrase with Argon2id and prompt for it on start. Write the file atomically (temp file + rename) so a crash can't corrupt it.
+- **Storage:** all session secrets (cookies, saved state, seq ID) live in one file, `session.enc` in termeownal's data directory, mode `0600`, encrypted with XChaCha20-Poly1305 (`golang.org/x/crypto/chacha20poly1305`). The 256-bit key is random and stored in the OS keyring. Fallback when there's no keyring (e.g. headless Linux without Secret Service): derive the key from a passphrase with Argon2id and prompt for it on start. Write the file atomically (temp file + rename) so a crash can't corrupt it. This protects copies of the file, such as backups, not against other programs running as you, which can read the keyring.
 - **Logs:** default level `info`; never log cookies, tokens or message text. Reuse upstream's redaction (`redactlog.go`, `SensitiveString`). Add a test that runs the fake login and greps the log for cookie names/values.
 - **Input:** cookies and passwords read with echo off (`golang.org/x/term`); never from flags.
 - **Logout:** deletes the session file and its keyring key; `--purge` also deletes the cache.
@@ -535,7 +535,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
 - [x] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
 - [x] `store` with migrations; app pump; cache-first startup.
-- [ ] `secrets` (keyring + encrypted fallback).
+- [x] `secrets` (keyring + encrypted fallback).
 - [ ] `meow login` (cookie flow, all three input forms) and `meow logout`.
 - [ ] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
 - [ ] Optimistic send + echo reconciliation + retry.
