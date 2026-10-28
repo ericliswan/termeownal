@@ -113,10 +113,11 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
-  - Types: `ThreadID` (= upstream `ThreadKey`, int64), `UserID` (= FBID), `MessageID`, `Thread`, `Message`, `User`, `Reaction`, `Session`.
-  - `Backend` interface: `Restore`, `Snapshot`, `MoreThreads`, `History`, `Send`, `MarkRead`, `SearchUsers`, `StartDM`, `Connect`, `Close`, `Events() <-chan Event`, `ExportSession`. Add methods only when a phase needs them.
-  - `Authenticator` interface for multi-step login (each step returns the next prompt).
-  - `Event` types: `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ReadReceipt`, `ThreadRead`, `ThreadUpdated`, `ThreadRemoved`, `Typing`, `SeqAdvanced`, `SessionChanged`.
+  - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. Add methods only when a phase needs them (Phase 2: `SearchUsers`, `StartDM`, replies, reactions, edits, unsends, typing).
+  - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 2 adds `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ReadReceipt`, `ThreadRemoved`, `Typing`.
+  - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
 - **`ui`** only sees `core` types and `tea.Msg`s. It never calls the backend directly; it returns `tea.Cmd`s that `app` provides.
@@ -173,7 +174,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 - The delta field is named `ThreadIGID` but its JSON tag is `thread_fbid` — it holds the **short** ID. If empty, fall back to `Message.ThreadFBID`. Trust JSON tags, not Go field names.
 - Deltas with an empty `thread_fbid` are ignored types (e.g. `Create1To1Thread`); don't look them up.
 - Typing notifications carry the **long** ID and the sender's **IGID**, so keep long → key and IGID → FBID maps too.
-- `ids.go` maintains `key ↔ short ↔ long` from every mailbox, thread and `FetchThreadID` response. Unknown short ID in a delta → `GetThread`, store mappings, then apply the delta.
+- `ids.go` maintains `key ↔ short ↔ long` in memory from every mailbox, thread and `FetchThreadID` response; it isn't persisted. Unknown short ID in a delta → `GetThread`, store mappings, then apply the delta. A key with no mapping (e.g. a cached thread opened before the first `Snapshot`) → `FetchThreadID(key)` for a 1:1, `GetThread(key)` for a group (key = short ID).
 - Users: `core.UserID` = FBID (`SenderFBID`, `GetOwnFBID`); store IGID and username alongside. A thread's `users` list excludes the viewer.
 - `docs/ids.md` is the verified source of truth. Read it before touching IDs.
 
@@ -265,7 +266,7 @@ SQLite via `modernc.org/sqlite`, numbered migrations, data dir from `adrg/xdg` (
 |---|---|
 | `account` | `fbid` PK, `igid`, `username`, `display_name` |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
-| `threads` | `thread_key` PK, `short_id` UNIQUE, `long_id` UNIQUE, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
+| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
 | `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
 | `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |

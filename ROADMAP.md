@@ -169,7 +169,7 @@ A thread has **three IDs that matter**, and each call wants a specific one. From
 
 Plan:
 - termeownal's `core.ThreadID` = **`ThreadKey`** (stable int64, matches upstream's choice).
-- The adapter keeps a table `ThreadKey ↔ ID ↔ ThreadID`, filled from every mailbox/thread response.
+- The adapter keeps a table `ThreadKey ↔ ID ↔ ThreadID` in memory, filled from every mailbox/thread response. Nothing outside the adapter sees short or long IDs.
 - A delta for an unknown short ID → `GetThread` to learn its other IDs, store, then apply the delta (upstream: `ensurePortal` / `getAndResyncThread` in `handlemeta.go`, lookup via `GetFBIDForIGChat`).
 - **Never trust field names** here; trust the JSON tag and the table above.
 - Missing long/short ID for a known key → `FetchThreadID(ctx, threadKey)`.
@@ -207,26 +207,29 @@ Plan:
 | `internal/config` | TOML config, XDG paths | no |
 | `internal/ui/...` | Bubble Tea models | no |
 
-### 5.2 `core.Backend` interface (design, not final)
+### 5.2 `core.Backend` interface (Phase 1)
 
 | Method | Returns | Notes |
 |---|---|---|
-| `Restore(ctx, Session)` | error | Builds client from saved cookies/state |
-| `Snapshot(ctx)` | `Me`, `[]Thread`, error | Wraps `LoadIndex` / `GetMailbox` |
-| `MoreThreads(ctx, cursor)` | `[]Thread`, next, error | `PaginateMailbox` |
-| `History(ctx, thread, before, n)` | `[]Message`, more bool, error | `PaginateMessages` |
-| `Send(ctx, thread, text, replyTo, localID)` | error | `SendMessage` |
-| `MarkRead(ctx, thread, upTo)` | error | |
-| `SearchUsers(ctx, q)` | `[]User`, error | |
-| `StartDM(ctx, user)` | `Thread`, error | |
-| `Connect(ctx)` / `Close()` | | socket lifecycle |
-| `Events()` | `<-chan core.Event` | normalized events |
-| `ExportSession()` | `Session`, error | for saving after login/state changes |
+| `Restore(ctx, Session)` | error | Builds client from saved cookies/state and seq ID |
+| `Snapshot(ctx)` | `me User`, `[]Thread`, error | Wraps `LoadIndex` / `GetMailbox`; threads carry their newest messages |
+| `History(ctx, thread, before, n)` | `[]Message` (oldest first), more bool, error | `PaginateMessages` |
+| `NewOTID()` | string | `methods.GenerateEpochID()`; the app needs the OTID before sending (§8) |
+| `Send(ctx, thread, text, otid)` | error | `SendMessage` |
+| `MarkRead(ctx, thread, upTo)` | error | `MarkRead` + `MarkReadValidation` |
+| `Connect(ctx)` | error | blocks while upstream's socket loop reconnects on its own |
+| `Events()` | `<-chan core.Event` | normalized events; closed by `Close` |
+| `ExportAuth()` | `AuthData`, error | cookies + `DumpState()`, for saving after `SessionChanged` |
+| `Close()` | | |
 
-Login lives in a separate `core.Authenticator` interface because it's a multi-step, interactive flow (§6).
+`core.ThreadID` is the thread key; short and long IDs stay in the adapter. The seq ID isn't in `ExportAuth`: the pump saves it from `SeqAdvanced`, so fresh cookies can never be saved with a seq ID ahead of the store. Phase 2 adds `SearchUsers`, `StartDM` and parameters for replies; `MoreThreads` (`PaginateMailbox`) comes when the thread list needs it.
+
+Login lives in a separate `core.Authenticator` interface because it's a multi-step, interactive flow (§6): `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
 
 ### 5.3 `core.Event` types
-`StatusChanged{Connecting|Connected|Reconnecting|Offline}`, `AuthFailed{Reason}`, `ResyncNeeded`, `MessageAdded{Message}`, `MessageEdited{ID, Text, At}`, `MessageDeleted{ID}`, `ReactionAdded/Removed{Msg, User, Emoji}`, `ReadReceipt{Thread, User, UpTo}`, `ThreadRead{Thread}` (read on another device), `ThreadUpdated{Thread}` (name, image, members, mute, folder), `ThreadRemoved{ID}`, `Typing{Thread, User, Active}`, `SeqAdvanced{SeqID, At}` (persisted by the pump after the deltas before it), `SessionChanged` (state or cookies changed → persist).
+Phase 1: `StatusChanged{Connecting|Connected|Reconnecting}`, `AuthFailed{Err}`, `ResyncNeeded`, `MessageAdded{Message}`, `ThreadRead{Thread, Until}` (read on another device), `ThreadUpdated{Thread}` (name, members, unread; also announces a thread the backend hadn't reported yet), `SeqAdvanced{SeqID, At}` (persisted by the pump after the deltas before it), `SessionChanged` (state or cookies changed → `ExportAuth` and persist).
+
+Phase 2 adds `MessageEdited{ID, Text, At}`, `MessageDeleted{ID}`, `ReactionAdded/Removed{Msg, User, Emoji}`, `ReadReceipt{Thread, User, UpTo}`, `ThreadRemoved{ID}`, `Typing{Thread, User, Active}`.
 
 ### 5.4 Concurrency
 ```
@@ -412,12 +415,12 @@ SQLite file `cache.db` in termeownal's data directory. Paths: use `adrg/xdg` (or
 |---|---|
 | `account` | `fbid` PK, `igid`, `username`, `display_name` (seq ID lives in the session file, §6.3) |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
-| `threads` | `thread_key` PK, `short_id` (`ThreadInfo.ID`), `long_id` (`ThreadInfo.ThreadID`), `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
+| `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `oldest_loaded_msg_id`, `history_complete` |
 | `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
 | `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
-Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity_ms)`, unique `threads(long_id)` and `threads(short_id)` for delta lookups.
+Indexes: `messages(thread_key, ts_ms)`, `messages(otid)`, `threads(last_activity_ms)`. Short and long thread IDs aren't stored: the adapter keeps them in memory (§4.5).
 
 The cache is **disposable** (`meow --reset-cache`). Secrets never go in it.
 
@@ -528,7 +531,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 ### Phase 1 — MVP · 1–2 weeks
 - [x] Repo skeleton (§15), AGPL-3.0 license, CI (build + test + lint). *(Package directories are created as each package lands.)*
 - [ ] `config` + XDG paths + file logging.
-- [ ] `core` types, `Backend`, `Authenticator`, `Event`.
+- [x] `core` types, `Backend`, `Authenticator`, `Event`.
 - [ ] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
 - [ ] **UI against the fake first:** thread list, chat view, composer, status bar, help overlay.
 - [ ] `store` with migrations; app pump; cache-first startup.
