@@ -18,12 +18,17 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"termeownal/internal/app"
+	"termeownal/internal/backend/fake"
 	"termeownal/internal/config"
+	"termeownal/internal/core"
 )
 
 func main() {
@@ -34,6 +39,9 @@ func main() {
 }
 
 func run() error {
+	backend := flag.String("backend", "instagram", "chat backend: instagram or fake (canned threads, no network)")
+	flag.Parse()
+
 	paths := config.DefaultPaths()
 	cfg, err := config.Load(paths.ConfigFile)
 	if err != nil {
@@ -45,6 +53,32 @@ func run() error {
 	}
 	defer func() { _ = logFile.Close() }()
 
-	log.Info().Str("config", paths.ConfigFile).Msg("meow starting")
-	return errors.New("not implemented yet")
+	log.Info().Str("config", paths.ConfigFile).Str("backend", *backend).Msg("meow starting")
+	ctx := context.Background()
+	switch *backend {
+	case "fake":
+		b, err := newFake(ctx)
+		if err != nil {
+			return err
+		}
+		return app.Run(ctx, b, log)
+	case "instagram":
+		return errors.New("the Instagram backend isn't implemented yet; try --backend=fake")
+	default:
+		return fmt.Errorf("unknown backend %q", *backend)
+	}
+}
+
+// newFake returns a logged-in fake backend that receives a message now and
+// then.
+func newFake(ctx context.Context) (core.Backend, error) {
+	step, err := fake.Authenticator{}.Submit(ctx, map[string]string{"username": "meow.tester", "password": "fake"})
+	if err != nil {
+		return nil, err
+	}
+	b := fake.New(fake.Options{IncomingEvery: 15 * time.Second, EchoDelay: 300 * time.Millisecond})
+	if err := b.Restore(ctx, core.Session{Auth: step.Result.Auth}); err != nil {
+		return nil, err
+	}
+	return b, nil
 }
