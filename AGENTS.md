@@ -35,12 +35,13 @@ These are not style preferences. Breaking one is a bug.
 
 ## 3. Commands
 
-These are the intended commands. When the Makefile exists, keep this section in sync with it.
+Keep this section in sync with the `Makefile`.
 
 | Task | Command |
 |---|---|
+| All pre-finish checks | `make check` (gofmt, vet, race tests, lint) |
 | Build | `go build ./...` |
-| Build static binary | `CGO_ENABLED=0 go build -o bin/meow ./cmd/meow` |
+| Build static binary | `CGO_ENABLED=0 go build -o bin/meow ./cmd/meow` (`make static`) |
 | Run against the fake backend (no Instagram) | `go run ./cmd/meow --backend=fake` |
 | Run for real (human only) | `go run ./cmd/meow` / `meow login` |
 | Test | `go test ./...` |
@@ -82,7 +83,6 @@ termeownal/
 │       ├── composer/
 │       ├── overlay/              # help, new DM, errors, emoji picker
 │       └── theme/
-├── spike/                        # Phase 0 throwaway; delete after Phase 0
 ├── sessions/                     # local session summaries, git-ignored (§13)
 ├── docs/
 │   ├── ids.md                    # verified ID behaviour (Phase 0 output)
@@ -91,7 +91,10 @@ termeownal/
 ├── ROADMAP.md
 ├── LICENSE                       # AGPL-3.0
 ├── README.md
-└── go.mod
+├── go.mod
+├── Makefile
+├── imports_test.go               # import boundary test (rule 1)
+└── .github/workflows/ci.yml
 ```
 
 Put new code in the package that owns the concern. Don't create `util`/`helpers`/`common` packages.

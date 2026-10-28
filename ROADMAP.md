@@ -526,7 +526,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 **Done when:** list, read, send, receive and resume all work from the spike. If something fundamental fails here, reconsider Option B before building more.
 
 ### Phase 1 — MVP · 1–2 weeks
-- [ ] Repo skeleton (§15), AGPL-3.0 license, CI (build + test + lint).
+- [x] Repo skeleton (§15), AGPL-3.0 license, CI (build + test + lint). *(Package directories are created as each package lands.)*
 - [ ] `config` + XDG paths + file logging.
 - [ ] `core` types, `Backend`, `Authenticator`, `Event`.
 - [ ] `backend/fake` with ~10 threads, groups, long histories, and a timer that injects incoming messages.
@@ -598,14 +598,16 @@ termeownal/
 │       ├── composer/
 │       ├── overlay/         # help, new DM, errors, emoji picker
 │       └── theme/
-├── spike/                   # Phase 0 throwaway (deleted after)
 ├── docs/
 │   ├── ids.md
 │   └── architecture.md
 ├── LICENSE                  # AGPL-3.0
 ├── README.md
 ├── ROADMAP.md
-└── go.mod
+├── go.mod
+├── Makefile
+├── imports_test.go          # import boundary test
+└── .github/workflows/ci.yml
 ```
 
 ---
