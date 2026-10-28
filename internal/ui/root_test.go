@@ -40,13 +40,6 @@ func clock() time.Time { return testNow }
 // backendActions runs Actions synchronously against a backend, like app does.
 type backendActions struct{ b core.Backend }
 
-func (a backendActions) Snapshot() tea.Cmd {
-	return func() tea.Msg {
-		me, threads, err := a.b.Snapshot(context.Background())
-		return SnapshotMsg{Me: me, Threads: threads, Err: err}
-	}
-}
-
 func (a backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
 	return func() tea.Msg {
 		msgs, more, err := a.b.History(context.Background(), thread, before, n)
@@ -77,7 +70,7 @@ func newFake(t *testing.T) *fake.Backend {
 	return b
 }
 
-// snapshot returns the backend's snapshot as a SnapshotMsg.
+// snapshot is the SnapshotMsg app sends once the backend's snapshot is stored.
 func snapshot(t *testing.T, b core.Backend) SnapshotMsg {
 	t.Helper()
 	me, threads, err := b.Snapshot(context.Background())
@@ -100,7 +93,7 @@ func newHarness(t *testing.T, w, h int) *harness {
 	b := newFake(t)
 	hs := &harness{t: t, b: b, m: New(backendActions{b}, clock)}
 	hs.do(tea.WindowSizeMsg{Width: w, Height: h})
-	hs.run(hs.m.Init())
+	hs.do(snapshot(t, b))
 	return hs
 }
 
@@ -311,6 +304,7 @@ func TestIncomingTextCantInjectEscapes(t *testing.T) {
 func TestRunsInProgram(t *testing.T) {
 	b := newFake(t)
 	tm := teatest.NewTestModel(t, New(backendActions{b}, clock), teatest.WithInitialTermSize(100, 30))
+	tm.Send(snapshot(t, b))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool { return bytes.Contains(out, []byte("Cat Café Crew")) },
 		teatest.WithDuration(5*time.Second))
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})

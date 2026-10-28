@@ -19,69 +19,79 @@ package app
 import (
 	"context"
 	"fmt"
+	"slices"
+	"sync"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/rs/zerolog"
 
 	"termeownal/internal/core"
+	"termeownal/internal/store"
 	"termeownal/internal/ui"
 )
 
-// Run shows the UI for a restored backend until the user quits, then closes
-// the backend.
-func Run(ctx context.Context, b core.Backend, log zerolog.Logger) error {
+// Run shows the UI until the user quits, keeping the cache st in sync with
+// the restored backend b, then closes b.
+func Run(ctx context.Context, b core.Backend, st *store.Store, log zerolog.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	p := tea.NewProgram(ui.New(actions{ctx: ctx, b: b}, time.Now), tea.WithContext(ctx))
+	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st}, time.Now), tea.WithContext(ctx))
 
-	// shortcut: the pump only forwards events; storing them, saving the seq
-	// ID and handling ResyncNeeded land with the store.
-	pumped := make(chan struct{})
-	go func() {
-		defer close(pumped)
-		for ev := range b.Events() {
-			p.Send(ev)
-		}
-	}()
-	go func() {
-		if err := b.Connect(ctx); err != nil && ctx.Err() == nil {
-			log.Error().Err(err).Msg("connection ended")
-			p.Send(ui.ErrorMsg{Err: fmt.Errorf("connection: %w", err)})
-		}
-	}()
+	// shortcut: the seq ID and SessionChanged aren't saved, so every start
+	// syncs from scratch; save them in session.enc once secrets lands.
+	p := newPump(b, st, prog, log)
+	var wg sync.WaitGroup
+	wg.Go(func() { p.run(ctx) })
+	wg.Go(func() { p.connectLoop(ctx) })
 
-	_, err := p.Run()
+	_, err := prog.Run()
 	cancel()
-	b.Close()
-	<-pumped
+	b.Close() // closes Events, which ends the pump
+	wg.Wait()
 	return err
 }
 
-// actions runs UI requests against a backend.
+// actions runs UI requests against the cache and the backend.
 type actions struct {
 	ctx context.Context
 	b   core.Backend
-}
-
-func (a actions) Snapshot() tea.Cmd {
-	return func() tea.Msg {
-		me, threads, err := a.b.Snapshot(a.ctx)
-		if err != nil {
-			err = fmt.Errorf("load threads: %w", err)
-		}
-		return ui.SnapshotMsg{Me: me, Threads: threads, Err: err}
-	}
+	st  *store.Store
 }
 
 func (a actions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
 	return func() tea.Msg {
-		msgs, more, err := a.b.History(a.ctx, thread, before, n)
+		msgs, more, err := a.history(thread, before, n)
 		if err != nil {
 			err = fmt.Errorf("load messages: %w", err)
 		}
 		return ui.HistoryMsg{Thread: thread, Messages: msgs, More: more, Err: err}
 	}
+}
+
+// history returns up to n messages older than before from the cache,
+// fetching what it lacks from the backend. The newest page always comes
+// from the backend, so opening a thread fills any gap since the last run.
+func (a actions) history(thread core.ThreadID, before core.MessageID, n int) ([]core.Message, bool, error) {
+	from := before
+	if before != "" {
+		msgs, more, err := a.st.History(a.ctx, thread, before, n)
+		if err != nil || len(msgs) == n || !more {
+			return msgs, more, err
+		}
+		// Fetch what's older than the oldest cached message the server knows.
+		if i := slices.IndexFunc(msgs, func(m core.Message) bool { return m.State == core.Sent }); i >= 0 {
+			from = msgs[i].ID
+		}
+	}
+	page, more, err := a.b.History(a.ctx, thread, from, n)
+	if err == nil {
+		err = a.st.PutHistory(a.ctx, thread, from, page, more)
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return a.st.History(a.ctx, thread, before, n)
 }
 
 func (a actions) Send(thread core.ThreadID, text string) tea.Cmd {

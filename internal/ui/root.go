@@ -47,8 +47,6 @@ const historyPage = 50
 // Actions runs backend calls for the UI. Each returns a tea.Cmd whose result
 // comes back as the message named in its doc.
 type Actions interface {
-	// Snapshot loads the user and threads; returns a SnapshotMsg.
-	Snapshot() tea.Cmd
 	// History loads older messages; returns a HistoryMsg.
 	History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd
 	// Send sends text; returns an ErrorMsg on failure, otherwise nil. The
@@ -56,11 +54,11 @@ type Actions interface {
 	Send(thread core.ThreadID, text string) tea.Cmd
 }
 
-// SnapshotMsg is the result of Actions.Snapshot.
+// SnapshotMsg carries the account and threads, each with its newest
+// messages: first from the cache, then from the backend. app sends it.
 type SnapshotMsg struct {
 	Me      core.User
 	Threads []core.Thread
-	Err     error
 }
 
 // HistoryMsg is the result of Actions.History.
@@ -124,8 +122,8 @@ func New(act Actions, now func() time.Time) Model {
 	}
 }
 
-// Init loads the threads.
-func (m Model) Init() tea.Cmd { return m.act.Snapshot() }
+// Init does nothing: app sends the threads as SnapshotMsgs.
+func (m Model) Init() tea.Cmd { return nil }
 
 // Update handles input, action results and core events.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -141,9 +139,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.act.Send(id, msg.Text)
 		}
 	case SnapshotMsg:
-		if msg.Err != nil {
-			return m.fail(msg.Err), nil
-		}
 		m.me = cleanUser(msg.Me)
 		for _, t := range msg.Threads {
 			m.upsert(t)

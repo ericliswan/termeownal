@@ -29,6 +29,7 @@ import (
 	"termeownal/internal/backend/fake"
 	"termeownal/internal/config"
 	"termeownal/internal/core"
+	"termeownal/internal/store"
 )
 
 func main() {
@@ -61,7 +62,15 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		return app.Run(ctx, b, log)
+		// The fake's message IDs restart every run and its history moves
+		// with the clock, so a cache on disk would mix runs.
+		st, err := store.Open(ctx, store.Memory)
+		if err != nil {
+			b.Close()
+			return err
+		}
+		defer func() { _ = st.Close() }()
+		return app.Run(ctx, b, st, log)
 	case "instagram":
 		return errors.New("the Instagram backend isn't implemented yet; try --backend=fake")
 	default:
