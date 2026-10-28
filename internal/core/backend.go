@@ -53,7 +53,8 @@ type Backend interface {
 	Events() <-chan Event
 
 	// ExportAuth returns the current login data to save. It changes while
-	// the backend runs; SessionChanged says when to export again.
+	// the backend runs; SessionChanged says when to export again. It works
+	// after Close, for a final save.
 	ExportAuth() (AuthData, error)
 
 	// Close disconnects and closes the Events channel.

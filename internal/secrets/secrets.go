@@ -30,6 +30,11 @@
 // shortcut: on Linux a locked keyring waits for its unlock prompt with no
 // timeout, so meow hangs where no prompt can show (e.g. over SSH); add a
 // timeout if that comes up.
+//
+// shortcut: nothing stops two meow processes using the file at once. The
+// last save wins, and after a Create in one, the other saves with a key
+// that's gone, so the file becomes unreadable; add a lock file with meow
+// login.
 package secrets
 
 import (
