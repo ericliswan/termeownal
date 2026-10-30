@@ -290,7 +290,7 @@ Instagram cookies needed (from `cookies.IGRequiredCookies` / `IGOptionalCookies`
    - guided prompts, one cookie at a time, **with echo off**
 3. Check required cookies present (the cookies package can report missing ones).
 4. Build `cookies.Cookies{Platform: types.Instagram}`, create client, call `LoadIndex`.
-5. On success: show "Logged in as *name* (@username)", save session (§6.3), seed cache from the returned mailbox. Seeding starts with `store.SetMe`, which clears another account's cache: `meow` shows the cache before it syncs.
+5. On success: show "Logged in as *name* (@username)", call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), then save the session (§6.3). Login doesn't seed the cache: it keeps only the cookies, so the first `meow` is a cold start whose `LoadIndex` fills it. That's one extra request, once, for less code.
 6. On failure: map the error (§6.4), don't save anything.
 
 Input is read from the terminal with no echo; never accept cookies via command-line flags or env vars by default.
@@ -313,7 +313,7 @@ Plan:
 
 Why not put everything in the keyring: `DumpState()` holds the web page config blob, which can be several KB, and some keyrings have small size limits (Windows Credential Manager ≈ 2.5 KB). A small key in the keyring + one encrypted file works everywhere.
 
-Cookies rotate over time (`rur`, `shbid`, …). The library updates its `*cookies.Cookies` **in place** from HTTP responses (`UpdateFromResponse`) and has **no change callback**. So: every few minutes, on `Connected`, after login, and on exit, snapshot `GetCookies()` and rewrite the session file if it changed.
+Cookies rotate over time (`rur`, `shbid`, …). The library updates its `*cookies.Cookies` **in place** from HTTP responses (`UpdateFromResponse`) and has **no change callback**. So: after login, when connecting, on `Connected`, on every seq ID update and on exit, snapshot `GetCookies()` and rewrite the session file if it changed. Cookies only change with HTTP responses, and an idle client makes none.
 
 ### 6.4 Error messages
 | Upstream error | termeownal says |
@@ -537,7 +537,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `store` with migrations; app pump; cache-first startup.
 - [x] `secrets` (keyring + encrypted fallback).
 - [x] `meow login` (cookie flow, all three input forms) and `meow logout`.
-- [ ] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
+- [x] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
 - [ ] Optimistic send + echo reconciliation + retry.
 - [ ] Unread counts; mark read on focus.
 - [ ] Reconnect handling, status bar states, auth-expired banner.

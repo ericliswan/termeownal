@@ -180,7 +180,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 - The delta field is named `ThreadIGID` but its JSON tag is `thread_fbid` — it holds the **short** ID. If empty, fall back to `Message.ThreadFBID`. Trust JSON tags, not Go field names.
 - Deltas with an empty `thread_fbid` are ignored types (e.g. `Create1To1Thread`); don't look them up.
 - Typing notifications carry the **long** ID and the sender's **IGID**, so keep long → key and IGID → FBID maps too.
-- `ids.go` maintains `key ↔ short ↔ long` in memory from every mailbox, thread and `FetchThreadID` response; it isn't persisted. Unknown short ID in a delta → `GetThread`, store mappings, then apply the delta. A key with no mapping (e.g. a cached thread opened before the first `Snapshot`) → `FetchThreadID(key)` for a 1:1, `GetThread(key)` for a group (key = short ID).
+- `ids.go` maintains `key ↔ short ↔ long` in memory from every mailbox, thread and `FetchThreadID` response; it isn't persisted. Unknown short ID in a delta → `GetThread`, store mappings, send the thread as `ThreadUpdated`, then apply the delta. A key with no mapping (e.g. a cached thread opened before the first `Snapshot`) → `FetchThreadID(key)`, and if that fails `GetThread(key)` (a group's key is its short ID): the adapter can't tell a 1:1 key from a group's.
 - Users: `core.UserID` = FBID (`SenderFBID`, `GetOwnFBID`); store IGID and username alongside. A thread's `users` list excludes the viewer.
 - `docs/ids.md` is the verified source of truth. Read it before touching IDs.
 
@@ -193,8 +193,10 @@ Rules:
 - Translate and push onto a buffered channel. If full, **block** (with `ctx`). Never drop.
 - `SeqIDUpdate` → `core.SeqAdvanced` on the **same channel**. The pump saves the seq ID only after the preceding deltas are written, so a crash can't save a seq ID ahead of stored data.
 - Delivery is **at-least-once**: deltas after the last saved seq ID are replayed on connect, and some (`ReadReceipt`, `MarkRead`) arrive twice anyway. Applying a delta twice must be harmless: upsert by message ID, keep the highest watermark, match echoes by OTID.
-- Return an error only for real failures (e.g. cancelled context). Log unknown events at `debug` and return `nil`.
-- Keep the handler free of disk or network work.
+- Return an error only for real failures (e.g. cancelled context, or `GetThread` failing for an unknown short ID, so the delta is delivered again). Log unknown events at `debug` and return `nil`.
+- Keep the handler free of disk work. Its only network call is `GetThread`, for an unknown short ID or a thread rename.
+- `ReconnectionStateUpdate` and `AuthError` arrive on the goroutine of whichever call is running (`LoadIndex` sends the new state), so they never wait on the channel: the adapter keeps them in fields.
+- `ResnapshotRequired` → `Connect` returns `nil` after sending `ResyncNeeded`. `AuthError`, or `Disconnected` with an unauthorized error, → `Connect` stops and returns `ErrSessionExpired`, as does every later `Connect`.
 
 ### 6.5 Resume logic (mirror `igconnector/client.go` → `connectWithRetry`)
 1. Show cached threads from SQLite immediately.
@@ -204,6 +206,8 @@ Rules:
    **Cold:** no seq ID → `LoadIndex`, save state.
 4. Store a fresh mailbox, **then** `Connect`: the pump stores `Backend.Snapshot` (`LoadIndex`'s mailbox on a cold start, otherwise `GetMailbox`) before it asks for a connection, so live events always apply on top of it. Don't refresh the mailbox in the background after `Connected`: it would race the replay. After `Connected`, gap-fill the open thread.
 5. `ErrPleaseReloadPage` → delete saved state, cold start.
+
+`Restore` does steps 2 and the `LoadState` half of 3 without touching the network; `Snapshot` makes the calls. A cold start's seq ID waits until `Connect`, since `Snapshot` never sends events.
 6. Force a full reconnect every 20 h (config `force_refresh_interval`, 0 disables), never more than once an hour. `ForceReconnect()` on detected sleep/wake (wall-clock jump > 2 min).
 7. Reconnect backoff when the library gives up: 1 s doubling to 60 s, with jitter.
 
@@ -244,7 +248,7 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - **Cookies (primary):** required `sessionid`, `csrftoken`, `ds_user_id`; optional `rur`, `shbid`, `shbts`, `mid`, `ig_did`.
 - Accept: a JSON object, a "Copy as cURL" command (parse its `Cookie:` header), or guided prompts with echo off.
 - Instructions shown to the user: use a Chromium-based browser (the library sends a fixed desktop-Chrome user agent), private window, copy cookies from DevTools, **close the window without logging out** (logging out kills `sessionid`).
-- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), **then** save the session, so a new session never shows the old account's cache.
+- Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), **then** save the session, so a new session never shows the old account's cache. Only the cookies are saved, so the first `meow` after a login is a cold start.
 - `cmd/meow/login.go` drives any `core.Authenticator`, so the fake one tests it. Answers are read in raw mode with bracketed paste: the terminal's line editor caps a line (1024 bytes on macOS), shorter than a cURL command. Enter inside a paste or after a `\` is a newline; Ctrl+C or Ctrl+D on an empty answer cancels.
 - **Password (Phase 4, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
 
@@ -256,7 +260,7 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - It protects copies of the file, such as backups, not against programs running as the same user: they can read the keyring (on macOS the item trusts `/usr/bin/security`).
 - Known limits (`shortcut:`s in the package doc): a locked Linux keyring waits for its prompt with no timeout.
 - Every command except `--backend=fake` holds `secrets.Lock` (`meow.lock` in the data dir), so a second `meow` fails with `ErrLocked` instead of racing for the file.
-- Cookies change in place (`Cookies.UpdateFromResponse`) with no callback: snapshot `GetCookies()` every few minutes, on `Connected`, after login and on exit; rewrite only if changed.
+- Cookies change in place (`Cookies.UpdateFromResponse`) with no callback. The adapter compares `GetCookies()` and the client state with what it last exported when `Connect` starts, on `Connected` and on each `SeqIDUpdate`, and sends `SessionChanged` if they differ; the pump also saves on exit. Idle means no HTTP, so no cookie changes to miss.
 - `meow logout` deletes the file and keyring key; `--purge` also deletes the cache.
 
 ### 7.3 Sending
