@@ -135,7 +135,7 @@ func run() error {
 		defer func() { _ = st.Close() }()
 		return app.Run(ctx, b, st, core.Session{}, nil, log)
 	case "instagram":
-		_, err := f.Load()
+		s, err := f.Load()
 		switch {
 		case errors.Is(err, secrets.ErrNoSession):
 			return errors.New("not logged in; run `meow login`")
@@ -144,9 +144,18 @@ func run() error {
 		case err != nil:
 			return err
 		}
-		// shortcut: the session loads but nothing uses it yet; #7 restores
-		// the Instagram backend from it and runs the app.
-		return errors.New("logged in, but the Instagram backend isn't implemented yet; try --backend=fake")
+		b := instagram.New(log)
+		if err := b.Restore(ctx, s); err != nil {
+			b.Close()
+			return fmt.Errorf("%w; run `meow login` again", err)
+		}
+		st, err := store.Open(ctx, paths.CacheFile)
+		if err != nil {
+			b.Close()
+			return err
+		}
+		defer func() { _ = st.Close() }()
+		return app.Run(ctx, b, st, s, f.Save, log)
 	default:
 		return fmt.Errorf("unknown backend %q", *backend)
 	}
