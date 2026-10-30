@@ -1,0 +1,96 @@
+{
+  "get_slide_mailbox_for_iris_subscription": {
+    "iris_inactive_subscription_uq_seq_id": "500",
+    "threads_by_folder": {
+      "edges": [
+        {
+          "node": {
+            "id": "node-1",
+            "as_ig_direct_thread": {
+              "id": "3400000000000001",
+              "thread_key": "10000000000000001",
+              "thread_fbid": "3400000000000001",
+              "thread_subtype": "IG_ONLY_ONE_TO_ONE",
+              "thread_id": "340282366841710300949128000000000000001",
+              "is_group": false,
+              "viewer": {"interop_messaging_user_fbid": "100", "username": "meow.tester", "full_name": "Meow Tester", "id": "9000"},
+              "thread_title": "alice.example",
+              "users": [
+                {"interop_messaging_user_fbid": "10000000000000001", "username": "alice.example", "full_name": "Alice Example", "id": "9001"}
+              ],
+              "last_activity_timestamp_ms": "1767225600000",
+              "slide_messages": {
+                "edges": [
+                  {"node": {"message_id": "mid.$fake1c", "sender_fbid": "10000000000000001", "thread_fbid": "3400000000000001", "content_type": "TEXT", "timestamp_ms": "1767225600000", "text_body": "placeholder three"}},
+                  {"node": {"message_id": "mid.$fake1b", "sender_fbid": "100", "thread_fbid": "3400000000000001", "content_type": "REACTION_LOG_XMAT", "timestamp_ms": "1767225500000", "text_body": ""}},
+                  {"node": {"message_id": "mid.$fake1a", "sender_fbid": "100", "thread_fbid": "3400000000000001", "content_type": "TEXT", "offline_threading_id": "7000000000000000001", "timestamp_ms": "1767225400000", "text_body": "placeholder one"}}
+                ],
+                "page_info": {"has_next_page": true}
+              },
+              "slide_read_receipts": [
+                {"participant_fbid": "10000000000000001", "watermark_timestamp_ms": "1767225600000"},
+                {"participant_fbid": "100", "watermark_timestamp_ms": "1767225400000"}
+              ],
+              "marked_as_unread": false,
+              "input_mode": 0
+            }
+          }
+        },
+        {
+          "node": {
+            "id": "node-2",
+            "as_ig_direct_thread": {
+              "id": "3400000000000002",
+              "thread_key": "3400000000000002",
+              "thread_fbid": "3400000000000002",
+              "thread_subtype": "IGD_GROUP",
+              "thread_id": "340282366841710300949128000000000000002",
+              "is_group": true,
+              "thread_title": "",
+              "users": [
+                {"interop_messaging_user_fbid": "10000000000000001", "username": "alice.example", "full_name": "Alice Example", "id": "9001"},
+                {"interop_messaging_user_fbid": "10000000000000002", "username": "bob.example", "full_name": "", "id": "9002"}
+              ],
+              "last_activity_timestamp_ms": "1767225300000",
+              "slide_messages": {
+                "edges": [
+                  {"node": {"message_id": "mid.$fake2a", "sender_fbid": "10000000000000002", "thread_fbid": "3400000000000002", "content_type": "MEDIA_SHARE", "timestamp_ms": "1767225300000", "text_body": ""}}
+                ],
+                "page_info": {"has_next_page": false}
+              },
+              "slide_read_receipts": [
+                {"participant_fbid": "100", "watermark_timestamp_ms": "1767225300000"}
+              ],
+              "marked_as_unread": false,
+              "input_mode": 0
+            }
+          }
+        },
+        {
+          "node": {
+            "id": "node-3",
+            "as_ig_direct_thread": {
+              "id": "3400000000000003",
+              "thread_key": "10000000000000003",
+              "thread_fbid": "3400000000000003",
+              "thread_subtype": "IG_SOMETHING_NEW",
+              "thread_id": "340282366841710300949128000000000000003",
+              "is_group": false,
+              "thread_title": "carol.example",
+              "users": [
+                {"interop_messaging_user_fbid": "10000000000000003", "username": "carol.example", "full_name": "", "id": "9003"}
+              ],
+              "last_activity_timestamp_ms": "1767225200000",
+              "slide_read_receipts": [
+                {"participant_fbid": "100", "watermark_timestamp_ms": "1767225200000"}
+              ],
+              "marked_as_unread": true,
+              "input_mode": 1
+            }
+          }
+        }
+      ],
+      "page_info": {"has_next_page": false}
+    }
+  }
+}

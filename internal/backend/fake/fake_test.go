@@ -293,7 +293,7 @@ func TestIncomingAndMarkRead(t *testing.T) {
 	if !unread() {
 		t.Error("incoming message didn't mark the thread unread")
 	}
-	if err := b.MarkRead(t.Context(), added.Message.Thread, added.Message.ID); err != nil {
+	if err := b.MarkRead(t.Context(), added.Message); err != nil {
 		t.Fatal(err)
 	}
 	if unread() {
