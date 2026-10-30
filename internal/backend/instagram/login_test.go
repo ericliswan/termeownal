@@ -103,12 +103,12 @@ func TestSubmitReadsEachForm(t *testing.T) {
 			if step.Result == nil || step.Result.Me != testMe {
 				t.Fatalf("result = %+v", step.Result)
 			}
-			saved := authData{Cookies: &cookies.Cookies{Platform: types.Instagram}}
+			var saved authData
 			if err := json.Unmarshal(step.Result.Auth, &saved); err != nil {
 				t.Fatal(err)
 			}
-			if !maps.Equal(saved.Cookies.GetAll(), want) {
-				t.Errorf("saved cookies = %q, want %q", saved.Cookies.GetAll(), want)
+			if !maps.Equal(saved.Cookies, want) {
+				t.Errorf("saved cookies = %q, want %q", saved.Cookies, want)
 			}
 		})
 	}

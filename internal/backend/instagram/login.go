@@ -71,9 +71,11 @@ func NewLogin(log zerolog.Logger) *Login {
 	}}
 }
 
-// authData is the AuthData a login produces.
+// authData is the AuthData a login produces and the backend saves: the
+// cookies, and the client state that makes the next start fast.
 type authData struct {
-	Cookies *cookies.Cookies `json:"cookies"`
+	Cookies map[cookies.MetaCookieName]string `json:"cookies"`
+	State   json.RawMessage                   `json:"state,omitempty"`
 }
 
 // Start asks for a paste.
@@ -118,7 +120,7 @@ func (l *Login) Submit(ctx context.Context, values map[string]string) (core.Logi
 	if err != nil {
 		return core.LoginStep{}, err
 	}
-	auth, err := json.Marshal(authData{Cookies: c})
+	auth, err := json.Marshal(authData{Cookies: c.GetAll()})
 	if err != nil {
 		return core.LoginStep{}, fmt.Errorf("encode cookies: %w", err)
 	}
