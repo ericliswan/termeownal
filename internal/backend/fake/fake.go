@@ -184,10 +184,10 @@ func (b *Backend) Send(_ context.Context, thread core.ThreadID, text, otid strin
 }
 
 // MarkRead clears the thread's unread flag.
-func (b *Backend) MarkRead(_ context.Context, thread core.ThreadID, _ core.MessageID) error {
+func (b *Backend) MarkRead(_ context.Context, upTo core.Message) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	t, err := b.threadLocked(thread)
+	t, err := b.threadLocked(upTo.Thread)
 	if err != nil {
 		return err
 	}

@@ -41,8 +41,8 @@ type Backend interface {
 	// OTID. Retrying with the same OTID can't create a duplicate.
 	Send(ctx context.Context, thread ThreadID, text, otid string) error
 
-	// MarkRead marks the thread read up to and including upTo.
-	MarkRead(ctx context.Context, thread ThreadID, upTo MessageID) error
+	// MarkRead marks upTo's thread read up to and including upTo.
+	MarkRead(ctx context.Context, upTo Message) error
 
 	// Connect runs the live connection, reconnecting on its own, and blocks
 	// until ctx is cancelled, Close is called, or the backend sends
