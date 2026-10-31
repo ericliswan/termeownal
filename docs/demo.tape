@@ -37,7 +37,7 @@ Enter
 Sleep 2s
 
 # Send a message; the fake echoes it back after a moment.
-Type "omw, bringing tuna"
+Type "omw, save me a seat"
 Sleep 500ms
 Enter
 Sleep 2s

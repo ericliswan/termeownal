@@ -305,7 +305,7 @@ func TestRunsInProgram(t *testing.T) {
 	b := newFake(t)
 	tm := teatest.NewTestModel(t, New(backendActions{b}, clock), teatest.WithInitialTermSize(100, 30))
 	tm.Send(snapshot(t, b))
-	teatest.WaitFor(t, tm.Output(), func(out []byte) bool { return bytes.Contains(out, []byte("Cat Café Crew")) },
+	teatest.WaitFor(t, tm.Output(), func(out []byte) bool { return bytes.Contains(out, []byte("COMP2003 project")) },
 		teatest.WithDuration(5*time.Second))
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
