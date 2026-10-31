@@ -14,8 +14,9 @@
 
 <p align="center">
   <a href="#preview">Preview</a> ·
-  <a href="#planned-features">Features</a> ·
+  <a href="#features">Features</a> ·
   <a href="#building">Building</a> ·
+  <a href="#logging-in">Logging in</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="ROADMAP.md">Roadmap</a>
 </p>
@@ -24,7 +25,7 @@ Instagram DMs in your terminal. Log in once, see your threads, read history, sen
 
 termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/meta/tree/main/pkg/instameow), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. It doesn't run the bridge, Matrix or any server.
 
-> **Status: early development.** termeownal can't send or receive messages yet. The proof-of-concept against Instagram is done (see [`docs/ids.md`](docs/ids.md)), and the MVP is being built now. Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
+> **Status: early development.** termeownal works with a real account: it loads your threads and history, and sends and receives messages live. The rest of the MVP is being built now; see [Features](#features) for what's missing. Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
 
 ## Preview
 
@@ -54,14 +55,20 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - **End-to-end encrypted chats aren't supported.** The upstream library can't read them.
 - termeownal isn't affiliated with or endorsed by Instagram or Meta.
 
-## Planned features
+## Features
 
-**MVP (in progress)**
-- A thread list, a chat view and a composer, with Vim-style keys
-- Live incoming messages, unread markers, and mark-as-read when you open a thread
-- Sending that shows your message right away and offers a retry if it fails
-- Instant startup from a local cache, with automatic reconnects
+**Works now**
 - Cookie login (`meow login`) and `meow logout`
+- A thread list, a chat view and a composer, with Vim-style keys
+- Your threads and their history, with older messages loaded as you scroll up
+- Sending, and live incoming messages, renames and new threads
+- Unread markers that clear when you read a thread on another device
+- Instant startup from a local cache
+
+**Still to come in the MVP**
+- Showing a sent message right away, with a retry if it fails (until then it appears once Instagram confirms it)
+- Marking a thread read when you open it
+- Reconnecting on its own after the connection drops (until then, restart `meow`)
 
 **Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications, themes, and an optional password login.
 
@@ -75,13 +82,26 @@ cd termeownal
 make static        # builds bin/meow
 ```
 
-`meow login` saves an Instagram session and `meow logout` removes it, but meow can't use the session yet: the Instagram backend is still being written. Meanwhile you can try the UI with canned chats and no network:
+To try the UI without an account, with canned chats and no network:
 
 ```sh
 ./bin/meow --backend=fake
 ```
 
 Prebuilt releases and a Homebrew tap are planned for later.
+
+## Logging in
+
+termeownal logs in with cookies copied from your browser; it never asks for your password.
+
+1. In a Chromium-based browser (Chrome, Edge or Brave), open a private window and log in to instagram.com.
+2. Open DevTools (<kbd>F12</kbd>, or <kbd>Cmd</kbd>+<kbd>Opt</kbd>+<kbd>I</kbd> on a Mac), click the **Network** tab and reload the page.
+3. Right-click the first request (`www.instagram.com`) and choose **Copy → Copy as cURL**.
+4. Run `./bin/meow login` and paste. Nothing is shown as you paste; press <kbd>Enter</kbd>. A JSON object of cookie names and values works too, or press <kbd>Enter</kbd> on an empty answer to type each cookie.
+5. Close the private window **without logging out**: logging out ends the session you just copied.
+6. Run `./bin/meow`. The first start loads everything from Instagram; later ones show your cached threads straight away.
+
+Press <kbd>?</kbd> in `meow` for the keys. If the session expires, `meow` asks you to run `meow login` again. `meow logout` deletes the saved session and its key; `meow logout --purge` deletes the message cache too.
 
 ## Where your data lives
 
@@ -117,13 +137,17 @@ force_refresh_interval = "20h"
 | Lint | `golangci-lint run` |
 | Record the README demo GIF (needs [vhs](https://github.com/charmbracelet/vhs)) | `make demo` |
 
-The tests never contact Instagram. The architecture and contributor rules are in [`AGENTS.md`](AGENTS.md); the full plan and the reasoning behind it are in [`ROADMAP.md`](ROADMAP.md).
+The tests never contact Instagram.
+
+The architecture and coding rules are in [`AGENTS.md`](AGENTS.md); the full plan and the reasoning behind it are in [`ROADMAP.md`](ROADMAP.md).
+
+This is a personal project, so pull requests aren't accepted, but you're welcome to fork it and experiment.
 
 <p align="center"><img alt="" src="assets/divider.svg" width="100%"></p>
 
 ## Credits
 
-termeownal is built on [mautrix/meta](https://github.com/mautrix/meta) by Tulir Asokan and its contributors. The terminal UI will use [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+termeownal is built on [mautrix/meta](https://github.com/mautrix/meta) by Tulir Asokan and its contributors. The terminal UI uses [Bubble Tea](https://github.com/charmbracelet/bubbletea).
 
 ## License
 
