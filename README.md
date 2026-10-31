@@ -18,6 +18,7 @@
   <a href="#building">Building</a> ·
   <a href="#logging-in">Logging in</a> ·
   <a href="#configuration">Configuration</a> ·
+  <a href="#contributing">Contributing</a> ·
   <a href="ROADMAP.md">Roadmap</a>
 </p>
 
@@ -141,7 +142,15 @@ The tests never contact Instagram.
 
 The architecture and coding rules are in [`AGENTS.md`](AGENTS.md); the full plan and the reasoning behind it are in [`ROADMAP.md`](ROADMAP.md).
 
-This is a personal project, so pull requests aren't accepted, but you're welcome to fork it and experiment.
+## Contributing
+
+Contributions are welcome. Open an issue first for anything bigger than a small fix, so we can agree on the approach. Then send a pull request from a fork:
+
+- Follow the rules in [`AGENTS.md`](AGENTS.md); they apply to people as well as coding agents. Above all: never commit cookies, session files or real Instagram data, and keep tests off the network.
+- Run `make check` before you push; CI runs the same checks.
+- Keep commits small, with a subject like `store: add thread ID mapping table`.
+
+By contributing, you agree that your work is licensed under the [AGPL-3.0](LICENSE).
 
 <p align="center"><img alt="" src="assets/divider.svg" width="100%"></p>
 
