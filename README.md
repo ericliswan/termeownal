@@ -31,7 +31,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 ## Preview
 
 <p align="center">
-  <img alt="termeownal with a group chat open: the thread list on the left, messages on the right and the composer below" src="assets/preview.svg" width="880">
+  <img alt="termeownal demo: opening a group chat, sending a message, browsing threads and showing the key help" src="assets/demo.gif" width="880">
 </p>
 <p align="center"><sub>The UI so far, running with <code>--backend=fake</code>: canned chats, no network.</sub></p>
 
@@ -40,13 +40,6 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
   <img alt="termeownal's help overlay listing the keyboard shortcuts" src="assets/screenshots/help.svg" width="49%">
 </p>
 <p align="center"><sub>The thread list, and the key help you get with <code>?</code></sub></p>
-
-<!--
-  Demo GIF: once the app is further along, run `make demo` (needs vhs) to
-  record docs/demo.tape into assets/demo.gif, then swap the image above for:
-
-  <img alt="termeownal demo" src="assets/demo.gif" width="880">
--->
 
 <p align="center"><img alt="" src="assets/divider.svg" width="100%"></p>
 
