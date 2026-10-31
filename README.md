@@ -75,19 +75,34 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 
 ## Building
 
-You need Go 1.26 or newer. termeownal is pure Go, so cgo isn't needed.
+You need [Go](https://go.dev/dl/) 1.26 or newer and Git. termeownal is pure Go, so you don't need a C compiler. First, get the code:
 
 ```sh
 git clone https://github.com/ericliswan/termeownal.git
 cd termeownal
-make static        # builds bin/meow
 ```
 
-To try the UI without an account, with canned chats and no network:
+Then build it and try the UI without an account, with canned chats and no network.
+
+**macOS, Linux and other Unix-like systems:**
 
 ```sh
+make static        # builds bin/meow
 ./bin/meow --backend=fake
 ```
+
+Without `make`, build with `CGO_ENABLED=0 go build -o bin/meow ./cmd/meow`.
+
+**Windows** (PowerShell, ideally in [Windows Terminal](https://aka.ms/terminal)):
+
+```powershell
+go build -o bin\meow.exe .\cmd\meow
+.\bin\meow.exe --backend=fake
+```
+
+The rest of this README writes `./bin/meow`; on Windows, type `.\bin\meow.exe` instead.
+
+termeownal has been used with a real account only on macOS so far. CI runs the tests on Linux and checks that it builds for Windows. If something doesn't work on your system, please [open an issue](https://github.com/ericliswan/termeownal/issues).
 
 Prebuilt releases and a Homebrew tap are planned for later.
 
@@ -96,8 +111,8 @@ Prebuilt releases and a Homebrew tap are planned for later.
 termeownal logs in with cookies copied from your browser; it never asks for your password.
 
 1. In a Chromium-based browser (Chrome, Edge or Brave), open a private window and log in to instagram.com.
-2. Open DevTools (<kbd>F12</kbd>, or <kbd>Cmd</kbd>+<kbd>Opt</kbd>+<kbd>I</kbd> on a Mac), click the **Network** tab and reload the page.
-3. Right-click the first request (`www.instagram.com`) and choose **Copy → Copy as cURL**.
+2. Open DevTools (<kbd>F12</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>; <kbd>Cmd</kbd>+<kbd>Opt</kbd>+<kbd>I</kbd> on a Mac), click the **Network** tab and reload the page.
+3. Right-click the first request (`www.instagram.com`) and choose **Copy → Copy as cURL**. On Windows, pick **Copy as cURL (bash)**, not the `cmd` or PowerShell versions.
 4. Run `./bin/meow login` and paste. Nothing is shown as you paste; press <kbd>Enter</kbd>. A JSON object of cookie names and values works too, or press <kbd>Enter</kbd> on an empty answer to type each cookie.
 5. Close the private window **without logging out**: logging out ends the session you just copied.
 6. Run `./bin/meow`. The first start loads everything from Instagram; later ones show your cached threads straight away.
@@ -106,14 +121,22 @@ Press <kbd>?</kbd> in `meow` for the keys. If the session expires, `meow` asks y
 
 ## Where your data lives
 
-| What | Where (macOS) | Notes |
+| What | File | Notes |
 |---|---|---|
-| Settings | `~/Library/Application Support/termeownal/config.toml` | Optional |
-| Log | `~/Library/Application Support/termeownal/meow.log` | Readable only by you; never holds passwords, cookies or message text |
-| Session | `session.enc` in the same folder | Encrypted; the key is kept in your OS keyring |
-| Message cache | the same folder | **Plaintext** on disk, so it can be deleted and fetched again |
+| Settings | `config.toml` | Optional |
+| Log | `meow.log` | Readable only by you; never holds passwords, cookies or message text |
+| Session | `session.enc` | Encrypted; the key is kept in your OS keyring |
+| Message cache | `cache.db` | **Plaintext** on disk, so it can be deleted and fetched again |
 
-On Linux these follow the XDG base directories (`~/.config`, `~/.local/share`, `~/.local/state`). You can move them with the `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` environment variables.
+| System | Settings | Session and cache | Log |
+|---|---|---|---|
+| macOS | `~/Library/Application Support/termeownal` | same | same |
+| Linux and other Unix-like systems | `~/.config/termeownal` | `~/.local/share/termeownal` | `~/.local/state/termeownal` |
+| Windows | `%LOCALAPPDATA%\termeownal` | same | same |
+
+You can move them with the `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_STATE_HOME` environment variables, on every system.
+
+The keyring is the macOS Keychain, the Windows Credential Manager, or on Linux the Secret Service (GNOME Keyring or KWallet). If there isn't one, `meow login` asks for a passphrase to encrypt the session with instead, and `meow` asks for it each time it starts.
 
 termeownal never takes passwords or cookies from command-line flags or environment variables. It reads them from the terminal with echo turned off.
 
