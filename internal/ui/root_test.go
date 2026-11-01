@@ -41,17 +41,19 @@ var testNow = time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
 func clock() time.Time { return testNow }
 
 // backendActions runs Actions synchronously against a backend, like app does.
-// Each Send is recorded in sent, and each MarkRead in read; while sendErr is
-// set, Send fails with it.
+// Each History call is counted in loads, each Send recorded in sent, and each
+// MarkRead in read; while sendErr is set, Send fails with it.
 type backendActions struct {
 	b       core.Backend
 	sendErr error
+	loads   int
 	sent    []core.Message
 	read    []core.Message
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
 	return func() tea.Msg {
+		a.loads++
 		msgs, more, err := a.b.History(context.Background(), thread, before, n)
 		return HistoryMsg{Thread: thread, Messages: msgs, More: more, Err: err}
 	}
@@ -458,6 +460,24 @@ func TestPgUpAtTopLoadsOlder(t *testing.T) {
 	h.press("esc", "tab", "g", "pgup")
 	if got := len(h.m.threads[id].Messages); got != before+historyPage {
 		t.Fatalf("messages = %d, want %d", got, before+historyPage)
+	}
+}
+
+func TestConnectedReloadsTheOpenThread(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	first, _ := h.m.chat.Thread()
+	h.press("esc", "j", "enter")
+	if open, _ := h.m.chat.Thread(); open == first {
+		t.Fatal("second thread not open")
+	}
+	loads := h.act.loads
+	h.do(core.StatusChanged{Status: core.Connected})
+	if h.act.loads != loads+1 {
+		t.Fatalf("History calls = %d, want %d", h.act.loads, loads+1)
+	}
+	if h.m.threads[first].fetched {
+		t.Error("first thread not marked stale")
 	}
 }
 

@@ -144,7 +144,7 @@ func run() error {
 		case err != nil:
 			return err
 		}
-		b := instagram.New(log)
+		b := instagram.New(log, cfg.ForceRefreshInterval)
 		if err := b.Restore(ctx, s); err != nil {
 			b.Close()
 			return fmt.Errorf("%w; run `meow login` again", err)

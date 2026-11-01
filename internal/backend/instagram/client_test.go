@@ -27,6 +27,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -190,6 +191,8 @@ func (f *fakeUpstream) Connect(ctx context.Context) {
 
 func (f *fakeUpstream) Disconnect() { _ = f.call("Disconnect", nil) }
 
+func (f *fakeUpstream) ForceReconnect() { _ = f.call("ForceReconnect", nil) }
+
 // emit delivers an event as upstream does, from inside Connect.
 func (f *fakeUpstream) emit(ctx context.Context, ev slidetypes.ClientEvent) error {
 	f.mu.Lock()
@@ -210,7 +213,7 @@ func testSession(state json.RawMessage, seq int64) core.Session {
 // newTestBackend returns a Backend restored from s, using f for Instagram.
 func newTestBackend(t *testing.T, f *fakeUpstream, s core.Session) *Backend {
 	t.Helper()
-	return restoreWith(t, New(zerolog.Nop()), f, s)
+	return restoreWith(t, New(zerolog.Nop(), 0), f, s)
 }
 
 func restoreWith(t *testing.T, b *Backend, f *fakeUpstream, s core.Session) *Backend {
@@ -284,7 +287,7 @@ func TestRestoreRejectsAnUnusableLogin(t *testing.T) {
 		"no session ID": noSessionAuth,
 	} {
 		t.Run(name, func(t *testing.T) {
-			b := New(zerolog.Nop())
+			b := New(zerolog.Nop(), 0)
 			defer b.Close()
 			err := b.Restore(t.Context(), core.Session{Auth: auth})
 			if !errors.Is(err, core.ErrSessionExpired) {
@@ -560,6 +563,55 @@ func TestConnectAsksForAResync(t *testing.T) {
 	}
 }
 
+// fakeClock returns start, then start+jump from its second call on.
+func fakeClock(start time.Time, jump time.Duration) func() time.Time {
+	var calls atomic.Int32
+	return func() time.Time {
+		if calls.Add(1) == 1 {
+			return start
+		}
+		return start.Add(jump)
+	}
+}
+
+func TestConnectReconnectsAfterSleep(t *testing.T) {
+	f := newFakeUpstream(t)
+	b := newTestBackend(t, f, testSession(testState, 400))
+	b.tick, b.now = time.Millisecond, fakeClock(time.Unix(1767225000, 0), 10*time.Minute)
+	f.connect = func(ctx context.Context) {
+		for {
+			if calls, _ := f.takeCalls(); slices.Contains(calls, "ForceReconnect") {
+				return
+			}
+			time.Sleep(time.Millisecond)
+		}
+	}
+	// Connect ends here only once watch has called ForceReconnect.
+	if err := b.Connect(t.Context()); err == nil {
+		t.Fatal("Connect returned nil when the connection ended")
+	}
+}
+
+func TestConnectRefreshes(t *testing.T) {
+	f := newFakeUpstream(t)
+	b := restoreWith(t, New(zerolog.Nop(), time.Hour), f, testSession(testState, 400))
+	b.tick, b.now = time.Millisecond, fakeClock(time.Unix(1767225000, 0), time.Hour)
+	snapshot(t, b, f)
+	if err := b.Connect(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	expect(t, b, core.ResyncNeeded{})
+
+	// The pump snapshots again, which reloads the state on the same client.
+	f.takeCalls()
+	if _, _, err := b.Snapshot(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if calls, _ := f.takeCalls(); !slices.Equal(calls, []string{"ReloadIndex", "GetMailbox"}) {
+		t.Errorf("calls = %q", calls)
+	}
+}
+
 func TestConnectStopsWhenTheLoginFails(t *testing.T) {
 	for name, ev := range map[string]slidetypes.ClientEvent{
 		"socket refused":   &slidetypes.Disconnected{Error: dgw.ErrUnauthorized},
@@ -734,7 +786,7 @@ func TestThreadIDLookup(t *testing.T) {
 func TestLogsHoldNoSecretsOrText(t *testing.T) {
 	var buf bytes.Buffer
 	f := newFakeUpstream(t)
-	b := restoreWith(t, New(zerolog.New(&buf).Level(zerolog.DebugLevel)), f, testSession(testState, 400))
+	b := restoreWith(t, New(zerolog.New(&buf).Level(zerolog.DebugLevel), 0), f, testSession(testState, 400))
 	snapshot(t, b, f)
 	handle(t, b, delta(t, `{"__typename":"SlideUQPPNewMessage","thread_fbid":"3400000000000001","message":{"message_id":"mid.$live1","sender_fbid":"1","thread_fbid":"3400000000000001","content_type":"TEXT","timestamp_ms":"1767225700000","text_body":"placeholder live"}}`))
 	handle(t, b, &slidetypes.ReconnectionStateUpdate{State: testState})

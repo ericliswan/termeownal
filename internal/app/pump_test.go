@@ -19,6 +19,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -363,8 +364,11 @@ func TestSessionSavedAtExit(t *testing.T) {
 		saved = append(saved, s)
 		return nil
 	}
-	b.Close() // so run returns once it has tried to sync
-	p.run(context.Background())
+	// Stopped as Run stops it, so run returns once it has tried to sync.
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	b.Close()
+	p.run(ctx)
 	assertSavedLogin(t, b, saved)
 }
 
@@ -411,5 +415,79 @@ func TestExpiredSessionOnSnapshot(t *testing.T) {
 	}
 	if len(p.connect) != 0 {
 		t.Error("asked to connect without a snapshot")
+	}
+}
+
+// flaky fails its first snapshots and connections with err.
+type flaky struct {
+	*fake.Backend
+	err                 error
+	failSnapshots       int32
+	failConnects        int32
+	snapshots, connects atomic.Int32
+}
+
+func (f *flaky) Snapshot(ctx context.Context) (core.User, []core.Thread, error) {
+	if f.snapshots.Add(1) <= f.failSnapshots {
+		return core.User{}, nil, f.err
+	}
+	return f.Backend.Snapshot(ctx)
+}
+
+func (f *flaky) Connect(ctx context.Context) error {
+	if f.connects.Add(1) <= f.failConnects {
+		return f.err
+	}
+	return f.Backend.Connect(ctx)
+}
+
+func newFlakyPump(t *testing.T, b *flaky) (*pump, *recorder) {
+	t.Helper()
+	b.Backend = restoredFake(t)
+	rec := &recorder{}
+	p := newPump(b, openStore(t), rec, zerolog.Nop())
+	p.wait = func(int) time.Duration { return time.Millisecond }
+	return p, rec
+}
+
+func TestRetriesUntilConnected(t *testing.T) {
+	b := &flaky{err: errors.New("fake network down"), failSnapshots: 2, failConnects: 2}
+	p, rec := newFlakyPump(t, b)
+	start(t, p)
+	waitFor(t, "connection", connected(rec))
+
+	got := rec.sent()
+	if n := len(sentOf[ui.ErrorMsg](got)); n != 4 {
+		t.Errorf("showed %d errors, want 4", n)
+	}
+	if n := len(sentOf[ui.SnapshotMsg](got)); n != 2 {
+		t.Errorf("sent %d snapshots, want the cache's and the backend's", n)
+	}
+	if s, c := b.snapshots.Load(), b.connects.Load(); s != 3 || c != 3 {
+		t.Errorf("%d snapshots and %d connects, want 3 of each", s, c)
+	}
+}
+
+func TestNoRetryWhenTheLoginFails(t *testing.T) {
+	b := &flaky{err: fmt.Errorf("fake: %w", core.ErrSessionExpired), failConnects: 100}
+	p, rec := newFlakyPump(t, b)
+	start(t, p)
+	waitFor(t, "auth failure", func() bool { return len(sentOf[core.AuthFailed](rec.sent())) > 0 })
+	time.Sleep(20 * time.Millisecond) // time for retries, at 1 ms each
+	if n := b.connects.Load(); n != 1 {
+		t.Errorf("connected %d times, want 1", n)
+	}
+}
+
+func TestBackoff(t *testing.T) {
+	for n, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second, time.Minute, time.Minute, time.Minute} {
+		for range 100 {
+			if d := backoff(n); d > want || d < want*4/5 {
+				t.Fatalf("backoff(%d) = %v, want %v less up to a fifth", n, d, want)
+			}
+		}
+	}
+	if d := backoff(1000); d > time.Minute {
+		t.Errorf("backoff(1000) = %v", d)
 	}
 }

@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/rs/zerolog"
@@ -55,10 +57,34 @@ type pump struct {
 	// failed is set once a write fails. No seq ID is saved after that, so the
 	// next start replays what the cache missed.
 	failed bool
+	// wait is how long to wait before retry n, from 0.
+	wait func(n int) time.Duration
 }
 
 func newPump(b core.Backend, st *store.Store, to uiSender, log zerolog.Logger) *pump {
-	return &pump{b: b, st: st, ui: to, log: log, connect: make(chan struct{}, 1)}
+	return &pump{b: b, st: st, ui: to, log: log, connect: make(chan struct{}, 1), wait: backoff}
+}
+
+// maxBackoff is the longest wait between retries.
+const maxBackoff = time.Minute
+
+// backoff is the wait before retry n: 1 s doubling to a minute, less up to a
+// fifth at random so many clients don't retry in step.
+func backoff(n int) time.Duration {
+	d := min(time.Second<<min(n, 6), maxBackoff)
+	return d - rand.N(d/5)
+}
+
+// sleep waits for d, or returns false once ctx is done.
+func sleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
 }
 
 // run shows the cache, then stores and shows the backend's snapshot, then
@@ -88,14 +114,21 @@ func (p *pump) run(ctx context.Context) {
 }
 
 // sync stores and shows a snapshot from the backend, then asks for a
-// connection, which delivers every event since the saved seq ID.
+// connection, which delivers every event since the saved seq ID. A failed
+// snapshot is retried with backoff until ctx is done, unless logging in
+// again is the fix.
 func (p *pump) sync(ctx context.Context) {
-	me, threads, err := p.b.Snapshot(ctx)
-	if err != nil {
-		// shortcut: a failed snapshot isn't retried, so the app stays
-		// offline; retry with backoff in the reconnect item.
+	var me core.User
+	var threads []core.Thread
+	for n := 0; ; n++ {
+		var err error
+		if me, threads, err = p.b.Snapshot(ctx); err == nil {
+			break
+		}
 		p.report(ctx, fmt.Errorf("load threads: %w", err))
-		return
+		if authError(err) || !sleep(ctx, p.wait(n)) {
+			return
+		}
 	}
 	if err := p.st.SetMe(ctx, me); err != nil {
 		p.writeFailed(ctx, err)
@@ -133,6 +166,8 @@ func (p *pump) apply(ctx context.Context, ev core.Event) {
 			p.report(ctx, err)
 		}
 	case core.ResyncNeeded:
+		// The connection has ended; it's back once Connect reports it.
+		p.ui.Send(core.StatusChanged{Status: core.Connecting})
 		p.sync(ctx)
 	}
 	if err != nil {
@@ -179,17 +214,27 @@ func (p *pump) report(ctx context.Context, err error) {
 		return
 	}
 	p.log.Error().Err(err).Msg("sync failed")
-	for _, auth := range []error{core.ErrSessionExpired, core.ErrVerificationRequired, core.ErrConsentRequired, core.ErrAccountSuspended} {
-		if errors.Is(err, auth) {
-			p.ui.Send(core.AuthFailed{Err: err})
-			return
-		}
+	if authError(err) {
+		p.ui.Send(core.AuthFailed{Err: err})
+		return
 	}
 	p.ui.Send(ui.ErrorMsg{Err: err})
 }
 
+// authError reports whether logging in again is the fix for err, so
+// retrying is pointless.
+func authError(err error) bool {
+	for _, auth := range []error{core.ErrSessionExpired, core.ErrVerificationRequired, core.ErrConsentRequired, core.ErrAccountSuspended} {
+		if errors.Is(err, auth) {
+			return true
+		}
+	}
+	return false
+}
+
 // connectLoop runs the live connection each time sync asks for one, until
-// ctx is done.
+// ctx is done. Connect retries on its own, so an error means it gave up: it
+// is called again with backoff, unless logging in again is the fix.
 func (p *pump) connectLoop(ctx context.Context) {
 	for {
 		select {
@@ -197,10 +242,22 @@ func (p *pump) connectLoop(ctx context.Context) {
 			return
 		case <-p.connect:
 		}
-		if err := p.b.Connect(ctx); err != nil {
-			// shortcut: a dropped connection isn't retried; retry with
-			// backoff in the reconnect item.
+		for n := 0; ; n++ {
+			began := time.Now()
+			err := p.b.Connect(ctx)
+			if err == nil || ctx.Err() != nil {
+				break
+			}
 			p.report(ctx, fmt.Errorf("connection: %w", err))
+			if authError(err) {
+				break
+			}
+			if time.Since(began) > maxBackoff {
+				n = 0 // it worked for a while, so start the backoff again
+			}
+			if !sleep(ctx, p.wait(n)) {
+				return
+			}
 		}
 	}
 }
