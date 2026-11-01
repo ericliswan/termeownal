@@ -539,7 +539,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `meow login` (cookie flow, all three input forms) and `meow logout`.
 - [x] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
 - [x] Optimistic send + echo reconciliation + retry.
-- [ ] Unread counts; mark read on focus.
+- [x] Unread counts; mark read on focus.
 - [ ] Reconnect handling, status bar states, auth-expired banner.
 
 **Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant.

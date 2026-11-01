@@ -124,3 +124,31 @@ func TestFailedSendSurvivesRestart(t *testing.T) {
 		t.Fatalf("cached messages = %+v, want %s failed", msgs, local.ID)
 	}
 }
+
+func TestMarkReadClearsCachedUnread(t *testing.T) {
+	b := restoredFake(t)
+	st := openStore(t)
+	ctx := context.Background()
+	_, threads, err := b.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutThreads(ctx, threads); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(threads, func(t core.Thread) bool { return t.Unread && len(t.Messages) > 0 })
+	if i < 0 {
+		t.Fatal("fake has no unread thread with messages")
+	}
+	upTo := threads[i].Messages[len(threads[i].Messages)-1]
+	if msg := (actions{ctx: ctx, b: b, st: st}).MarkRead(upTo)(); msg != nil {
+		t.Fatalf("MarkRead = %+v, want nil", msg)
+	}
+	_, cached, err := st.Snapshot(ctx, snapshotMessages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := slices.IndexFunc(cached, func(t core.Thread) bool { return t.ID == upTo.Thread }); j < 0 || cached[j].Unread {
+		t.Fatalf("cached thread %d still unread", upTo.Thread)
+	}
+}
