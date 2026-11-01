@@ -548,8 +548,8 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 
 ### Phase 2 — Password login + first release · ~1 week
 - [ ] Password login (Native Web, §6.2) with the 2FA step; `meow login` asks for a password or cookies. Browser-only steps end with "use cookie login instead".
-- [ ] `meow --version`, set at build time.
-- [ ] GoReleaser builds for macOS and Linux (amd64 and arm64), published to GitHub Releases by a workflow on tag push.
+- [x] `meow --version`, set at build time.
+- [x] GoReleaser builds for macOS and Linux (amd64 and arm64), published to GitHub Releases by a workflow on tag push.
 - [ ] Homebrew tap: `brew install ericliswan/tap/meow`.
 - [ ] Release v0.1.0.
 

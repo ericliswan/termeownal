@@ -1,0 +1,49 @@
+# Builds and publishes a release when a vX.Y.Z tag is pushed
+# (.github/workflows/release.yml); AGENTS.md §14.1 has the process.
+# Check it with `goreleaser check`; try it with `make snapshot`.
+version: 2
+
+project_name: meow
+
+builds:
+  - main: ./cmd/meow
+    binary: meow
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+archives:
+  - formats: [tar.gz]
+    files: [LICENSE, README.md]
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github-native
+
+release:
+  # The annotated tag's message, after its subject line, holds the notes.
+  header: "{{ .TagBody }}"
+
+homebrew_casks:
+  - name: meow
+    binaries: [meow]
+    homepage: https://github.com/ericliswan/termeownal
+    description: Terminal client for Instagram DMs
+    skip_upload: auto # not for prereleases such as v0.2.0-rc1
+    repository:
+      owner: ericliswan
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    hooks:
+      post:
+        # The binary isn't signed or notarized, so macOS would refuse to run it.
+        install_steps: |
+          on_macos do
+            run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/meow"]
+          end
