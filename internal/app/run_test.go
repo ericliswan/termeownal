@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"termeownal/internal/core"
+	"termeownal/internal/ui"
 )
 
 func ids(msgs []core.Message) []core.MessageID {
@@ -88,5 +89,38 @@ func TestHistory(t *testing.T) {
 		if err != nil || !slices.Equal(ids(msgs), p.ids) || more != p.more {
 			t.Errorf("offline page before %q: got %v (more %v, err %v), want %v (more %v)", p.before, ids(msgs), more, err, p.ids, p.more)
 		}
+	}
+}
+
+// TestFailedSendSurvivesRestart sends with the backend gone: the local copy
+// is cached first, so the next start shows it as failed, ready to retry.
+func TestFailedSendSurvivesRestart(t *testing.T) {
+	b := restoredFake(t)
+	st := openStore(t)
+	ctx := context.Background()
+	_, threads, err := b.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutThreads(ctx, threads); err != nil {
+		t.Fatal(err)
+	}
+	b.Close()
+	local := core.Message{ID: "local:otid-1", Thread: 101, Sender: 1, At: testNow, Text: "hi", OTID: "otid-1", State: core.Sending}
+	sent, ok := actions{ctx: ctx, b: b, st: st}.Send(local)().(ui.SentMsg)
+	if !ok || sent.Err == nil {
+		t.Fatalf("Send with the backend closed = %+v, want an error", sent)
+	}
+
+	if err := st.FailUnsent(ctx); err != nil { // as the next start does
+		t.Fatal(err)
+	}
+	msgs, _, err := st.History(ctx, 101, "", 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(msgs, func(m core.Message) bool { return m.ID == local.ID })
+	if i < 0 || msgs[i].State != core.SendFailed || msgs[i].OTID != local.OTID {
+		t.Fatalf("cached messages = %+v, want %s failed", msgs, local.ID)
 	}
 }

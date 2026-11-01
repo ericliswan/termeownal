@@ -173,6 +173,12 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, more, loading
 		for _, l := range strings.Split(lipgloss.Wrap(body, width-2, ""), "\n") {
 			lines = append(lines, "  "+l)
 		}
+		switch m.State {
+		case core.Sending:
+			lines = append(lines, "  "+theme.Dim.Render("sending…"))
+		case core.SendFailed:
+			lines = append(lines, "  "+theme.Bold.Render("✗ not sent · r to retry"))
+		}
 		prev = m
 	}
 	return lines

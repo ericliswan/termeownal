@@ -64,6 +64,11 @@ func newPump(b core.Backend, st *store.Store, to uiSender, log zerolog.Logger) *
 // run shows the cache, then stores and shows the backend's snapshot, then
 // applies events until the backend closes its Events channel.
 func (p *pump) run(ctx context.Context) {
+	// Nothing can be sending yet, so a message still Sending was cut off by
+	// the last exit. The UI's first send waits for the snapshot below.
+	if err := p.st.FailUnsent(ctx); err != nil {
+		p.report(ctx, err)
+	}
 	// The cache belongs to this account: meow login clears another
 	// account's with store.SetMe.
 	if me, threads, err := p.st.Snapshot(ctx, snapshotMessages); err != nil {
