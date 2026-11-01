@@ -61,6 +61,7 @@ type upstream interface {
 	MarkRead(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadResponse, error)
 	MarkReadValidation(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadValidationResponse, error)
 	Connect(context.Context)
+	ForceReconnect()
 	Disconnect()
 }
 
@@ -72,6 +73,11 @@ type Backend struct {
 	newClient func(instameow.ClientParams) upstream
 	ids       idMap
 	events    chan core.Event
+	// refreshEvery is how long a connection lasts before a full refresh; 0
+	// never refreshes. watch checks the wall clock from now every tick.
+	refreshEvery time.Duration
+	now          func() time.Time
+	tick         time.Duration
 
 	// ctx is cancelled by Close; wg tracks Connect and event handler calls
 	// so Close can wait for them before closing events.
@@ -100,15 +106,21 @@ type Backend struct {
 
 var _ core.Backend = (*Backend)(nil)
 
-// New returns a Backend that logs to log. Call Restore before using it.
-func New(log zerolog.Logger) *Backend {
+// New returns a Backend that logs to log and refreshes a connection after
+// refreshEvery, or never if it's 0. Call Restore before using it.
+func New(log zerolog.Logger, refreshEvery time.Duration) *Backend {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Backend{
-		log:       log,
-		newClient: func(p instameow.ClientParams) upstream { return instameow.NewClient(p) },
-		events:    make(chan core.Event, queueSize),
-		ctx:       ctx,
-		cancel:    cancel,
+		log:          log,
+		newClient:    func(p instameow.ClientParams) upstream { return instameow.NewClient(p) },
+		events:       make(chan core.Event, queueSize),
+		refreshEvery: refreshEvery,
+		// Round(0) drops the monotonic reading, which stops while a Mac
+		// sleeps, so a wake shows as a jump.
+		now:    func() time.Time { return time.Now().Round(0) },
+		tick:   30 * time.Second,
+		ctx:    ctx,
+		cancel: cancel,
 	}
 }
 
@@ -371,8 +383,9 @@ func (b *Backend) fetchThread(ctx context.Context, client upstream, short string
 }
 
 // Connect runs the live connection; upstream reconnects on its own. It
-// returns when ctx is done, Close is called, the login stops working, or
-// Instagram asks for a new snapshot, after sending ResyncNeeded.
+// returns when ctx is done, Close is called, or the login stops working. It
+// also returns after sending ResyncNeeded when Instagram asks for a new
+// snapshot, or when the connection is due a refresh (AGENTS.md §6.5).
 func (b *Backend) Connect(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -394,9 +407,54 @@ func (b *Backend) Connect(ctx context.Context) error {
 	defer context.AfterFunc(b.ctx, cancel)()
 
 	if b.send(ctx, pending...) == nil && b.checkSession(ctx) == nil {
-		client.Connect(ctx)
+		run, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			b.watch(run, stop, client)
+		}()
+		client.Connect(run)
+		stop()
+		<-done
 	}
 	return b.stopped(ctx)
+}
+
+// sleepJump is how far the wall clock must jump past a tick to count as a
+// wake from sleep.
+const sleepJump = 2 * time.Minute
+
+// watch runs beside client.Connect(run). After a wake from sleep it
+// reconnects at once, since the old socket is likely dead. Once the
+// connection is refreshEvery old it drops the saved state and calls stop,
+// so Connect asks for a resync: the next Snapshot reloads the state, as a
+// warm start does, and the connection resumes from the same seq ID.
+func (b *Backend) watch(run context.Context, stop context.CancelFunc, client upstream) {
+	t := time.NewTicker(b.tick)
+	defer t.Stop()
+	start := b.now()
+	last := start
+	for {
+		select {
+		case <-run.Done():
+			return
+		case <-t.C:
+		}
+		now := b.now()
+		switch {
+		case b.refreshEvery > 0 && now.Sub(start) >= b.refreshEvery:
+			b.log.Info().Msg("refreshing the connection")
+			b.mu.Lock()
+			b.state, b.resync = nil, true
+			b.mu.Unlock()
+			stop()
+			return
+		case now.Sub(last) > b.tick+sleepJump:
+			b.log.Info().Msg("woke from sleep; reconnecting")
+			client.ForceReconnect()
+		}
+		last = now
+	}
 }
 
 // stopped says why Connect stopped, sending ResyncNeeded if that's why.
