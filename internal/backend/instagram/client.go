@@ -164,7 +164,7 @@ func (b *Backend) build(c *cookies.Cookies, seq int64, at time.Time) upstream {
 		SeqID:        seq,
 		SeqIDTS:      at,
 		EventHandler: b.handle,
-		// Typing arrives in Phase 2.
+		// Typing arrives in Phase 3.
 		DisableTyping: true,
 	})
 }

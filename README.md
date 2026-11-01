@@ -61,7 +61,9 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
 
-**Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications, themes, and an optional password login.
+**Next:** an optional password login, and prebuilt releases on GitHub and Homebrew.
+
+**Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
 
 ## Building
 

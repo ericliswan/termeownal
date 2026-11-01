@@ -39,7 +39,7 @@ _Plan only — no code yet. Written against `mautrix/meta` `main` as of 27 Oct 2
 | TUI | Bubble Tea + Bubbles + Lip Gloss | |
 | Storage | SQLite via `modernc.org/sqlite` (pure Go, no cgo) | Cache only; secrets go elsewhere |
 | Secrets | One encrypted session file; its key in the OS keyring (`zalando/go-keyring`), passphrase fallback | §12 |
-| First login method | Browser cookies | Password login in a later phase |
+| First login method | Browser cookies | Password login (best effort) in Phase 2 |
 | License | **AGPL-3.0** | Required: importing an AGPL package makes termeownal a derivative work |
 | Accounts | One | Multi-account is a stretch goal |
 
@@ -59,7 +59,8 @@ _Plan only — no code yet. Written against `mautrix/meta` `main` as of 27 Oct 2
 ### Later
 - Typing indicators, read receipts, reactions, edits, unsends.
 - Media: placeholders → open in external viewer → inline images on supporting terminals → sending images.
-- Message requests, desktop notifications, password login, packaging.
+- Password login and prebuilt releases (Phase 2, next).
+- Message requests, desktop notifications.
 
 ### Non-goals
 - Feed, stories, reels, posting, profile editing.
@@ -124,17 +125,17 @@ Also: `LoadState(raw)` / `DumpState()` to save and restore reconnection state, `
 | History | `PaginateMessages(&PaginateMessagesRequest{ThreadID, OlderThanMessageID, FirstN, …})` — `ThreadID` is the thread's **`ThreadInfo.ID`** (§4.5) | 1 |
 | Send text | `SendMessage(&SendTextRequest{IGThreadIGID, Text, OfflineThreadingID, ReplyToMessageID, …})` — `IGThreadIGID` is the short ID **`ThreadInfo.ID`** (the long ID also works); first message to a new user: `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID` | 1 |
 | Mark read | `MarkRead(&MarkReadRequest{Metadata{IGThreadIGID}, Data{MessageID, …}})`, then `MarkReadValidation` with the same request (upstream calls both) | 1 |
-| Typing out | `SetTyping(ctx, shortID, typing)` — `ThreadInfo.ID` | 2 |
-| Search people | `SearchUsers(ctx, query)` | 2 |
-| New DM target | `GetUserForNewDM(ctx, fbid)`, `GetProfile(ctx, igid)` | 2 |
-| Reactions | `SendReaction(&CreateReactionRequest{…})` | 2 |
-| Edit / unsend | `EditMessage`, `UnsendMessage` | 2 |
-| Message requests | `AcceptMessageRequest` | 2 |
-| Media download | `FetchMedia(ctx, mediaID, shortcode)` | 3 |
-| Media send | upload via `GetHTTP().SendMercuryUploadRequest(...)`, then `SendMedia(&SendMediaRequest{…})` — follow `igconnector/handlematrix.go` (`SendMedia` call) and `msgconv` | 3 |
+| Typing out | `SetTyping(ctx, shortID, typing)` — `ThreadInfo.ID` | 3 |
+| Search people | `SearchUsers(ctx, query)` | 3 |
+| New DM target | `GetUserForNewDM(ctx, fbid)`, `GetProfile(ctx, igid)` | 3 |
+| Reactions | `SendReaction(&CreateReactionRequest{…})` | 3 |
+| Edit / unsend | `EditMessage`, `UnsendMessage` | 3 |
+| Message requests | `AcceptMessageRequest` | 3 |
+| Media download | `FetchMedia(ctx, mediaID, shortcode)` | 4 |
+| Media send | upload via `GetHTTP().SendMercuryUploadRequest(...)`, then `SendMedia(&SendMediaRequest{…})` — follow `igconnector/handlematrix.go` (`SendMedia` call) and `msgconv` | 4 |
 | ID lookup | `FetchThreadID(ctx, threadKey)` → `ThreadIGIDs{LongID, ShortID}` | 1 |
 | Live updates | `Connect(ctx)`, `Disconnect()`, `ForceReconnect()` | 1 |
-| Password login | `CreateInstagramWebSession` → `CompleteInstagramWebSessionTwoFactor`, plus consent / captcha / auth-platform / account-picker steps (§6.2) | 4 |
+| Password login | `CreateInstagramWebSession` → `CompleteInstagramWebSessionTwoFactor`, plus consent / captcha / auth-platform / account-picker steps (§6.2) | 2 |
 
 ### 4.3 Events delivered to the handler (`slidetypes.ClientEvent`)
 
@@ -222,14 +223,14 @@ Plan:
 | `ExportAuth()` | `AuthData`, error | cookies + `DumpState()`, for saving after `SessionChanged` |
 | `Close()` | | |
 
-`core.ThreadID` is the thread key; short and long IDs stay in the adapter. The seq ID isn't in `ExportAuth`: the pump saves it from `SeqAdvanced`, so fresh cookies can never be saved with a seq ID ahead of the store. Phase 2 adds `SearchUsers`, `StartDM` and parameters for replies; `MoreThreads` (`PaginateMailbox`) comes when the thread list needs it.
+`core.ThreadID` is the thread key; short and long IDs stay in the adapter. The seq ID isn't in `ExportAuth`: the pump saves it from `SeqAdvanced`, so fresh cookies can never be saved with a seq ID ahead of the store. Phase 3 adds `SearchUsers`, `StartDM` and parameters for replies; `MoreThreads` (`PaginateMailbox`) comes when the thread list needs it.
 
 Login lives in a separate `core.Authenticator` interface because it's a multi-step, interactive flow (§6): `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
 
 ### 5.3 `core.Event` types
 Phase 1: `StatusChanged{Connecting|Connected|Reconnecting}`, `AuthFailed{Err}`, `ResyncNeeded`, `MessageAdded{Message}`, `ThreadRead{Thread, Until}` (read on another device), `ThreadUpdated{Thread}` (name, members, unread; also announces a thread the backend hadn't reported yet), `SeqAdvanced{SeqID, At}` (persisted by the pump after the deltas before it), `SessionChanged` (state or cookies changed → `ExportAuth` and persist).
 
-Phase 2 adds `MessageEdited{ID, Text, At}`, `MessageDeleted{ID}`, `ReactionAdded/Removed{Msg, User, Emoji}`, `ReadReceipt{Thread, User, UpTo}`, `ThreadRemoved{ID}`, `Typing{Thread, User, Active}`.
+Phase 3 adds `MessageEdited{ID, Text, At}`, `MessageDeleted{ID}`, `ReactionAdded/Removed{Msg, User, Emoji}`, `ReadReceipt{Thread, User, UpTo}`, `ThreadRemoved{ID}`, `Typing{Thread, User, Active}`.
 
 ### 5.4 Concurrency
 ```
@@ -295,7 +296,7 @@ Instagram cookies needed (from `cookies.IGRequiredCookies` / `IGOptionalCookies`
 
 Input is read from the terminal with no echo; never accept cookies via command-line flags or env vars by default.
 
-### 6.2 Password login (Phase 4)
+### 6.2 Password login (Phase 2)
 Upstream supports "Native Web" and "Native Android". Native Web is **not** just password + 2FA: depending on what Instagram asks for, it can go through cookie consent (`ContinueInstagramWebSessionAfterCookieConsent`), captcha (`HasInstagramWebCaptcha` / `SubmitInstagramWebCaptcha` — the captcha is solved by JavaScript in a browser, see `login_web_captcha.js`), an auth-platform challenge (`DoInstagramWebAuthPlatformSteps`), and an account picker (`login_account_manager.go`). Several of these return `*bridgev2.LoginStep`.
 
 Plan:
@@ -381,7 +382,7 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 6. Failure, or no echo within ~30 s: `send_state=failed`; UI shows "✗ not sent · r to retry". Retry reuses the **same OTID** so a late echo still matches and no duplicate appears.
 7. New DM: upstream keys a 1:1 chat by the other user's FBID. Look up the existing DM with `FetchThreadID(ctx, userFBID)`; if it returns `ErrThreadNotFound`, show an empty chat (user info from `GetUserForNewDM`) and create the thread on first send: `SendMessage` with `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID`. The echo carries a short ID we haven't seen; call `FetchThreadID(ctx, userFBID)` again to learn the thread's IDs. Verified in Phase 0 (`docs/ids.md` §6).
 
-Text limits: strip trailing whitespace; reject empty; warn above Instagram's message length limit (still unknown; find it in Phase 1).
+Text limits: strip trailing whitespace; reject empty; warn above Instagram's message length limit (still unknown; needs a live test).
 
 ---
 
@@ -391,7 +392,7 @@ Text limits: strip trailing whitespace; reject empty; warn above Instagram's mes
 
 Plan:
 - Phase 1: render `TextBody`; for anything else render a bracketed label from `ContentType` (`IGDSnippet` is empty in history). Skip `REACTION_LOG_XMAT` entries; they are reaction log lines, not messages. Collect every `ContentType` value you see in a debug log to build the mapping.
-- Phase 2+: proper mapping table, e.g.
+- Phase 3+: proper mapping table, e.g.
 
 | Content | Render |
 |---|---|
@@ -466,7 +467,7 @@ The cache is **disposable** (`meow --reset-cache`). Secrets never go in it.
 | `/` | filter threads |
 | `Ctrl+N` | new DM |
 | `r` | reply to selected message (or retry if failed) |
-| `e` | react (Phase 2) |
+| `e` | react (Phase 3) |
 | `o` | open media/link |
 | `Esc` | cancel reply / close overlay |
 | `?` | help |
@@ -545,7 +546,16 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 
 **Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant.
 
-### Phase 2 — Real messenger feel · 1–2 weeks
+### Phase 2 — Password login + first release · ~1 week
+- [ ] Password login (Native Web, §6.2) with the 2FA step; `meow login` asks for a password or cookies. Browser-only steps end with "use cookie login instead".
+- [ ] `meow --version`, set at build time.
+- [ ] GoReleaser builds for macOS and Linux (amd64 and arm64), published to GitHub Releases by a workflow on tag push.
+- [ ] Homebrew tap: `brew install ericliswan/tap/meow`.
+- [ ] Release v0.1.0.
+
+**Done when:** v0.1.0 installs with Homebrew and logs in with a password or cookies.
+
+### Phase 3 — Real messenger feel · 1–2 weeks
 - [ ] Replies (render + `r`).
 - [ ] Typing in/out (configurable).
 - [ ] Read receipts per member; "Seen".
@@ -556,22 +566,28 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [ ] Thread filter, group member list, mute indicator.
 - [ ] Content-type mapping table (§9) from Phase 0/1 logs.
 
-### Phase 3 — Media · ~1 week
+### Phase 4 — Media · ~1 week
 - [ ] Media placeholders with duration/size where available.
 - [ ] `o` → `FetchMedia` → temp file → `xdg-open` / `open`.
 - [ ] Inline images on kitty / iTerm2 / sixel terminals (detect support, fall back to placeholder).
 - [ ] Send image from path (`/upload ~/pic.jpg` or `Ctrl+U` file prompt) via `SendMedia`.
 
-### Phase 4 — Polish & release
-- [ ] Password login (Native Web) with 2FA step.
+### Phase 5 — Polish
 - [ ] Desktop notifications when the thread isn't focused (respect mute).
 - [ ] Themes + keybinding config.
-- [ ] GoReleaser builds (macOS, Linux), Homebrew tap, README with demo GIF (recorded with `vhs` against the fake backend so no real data is shown).
 
 ### Stretch
 - [ ] Multiple accounts.
 - [ ] Encrypted cache.
 - [ ] `backend/matrix` (Option B) to show any mautrix bridge.
+
+### Releases
+From v0.1.0 on, ship often: a release whenever features, fixes or polish land, not only at the end of a phase.
+- Versions are SemVer `v0.Y.Z` until 1.0: the minor goes up for new features, the patch for fixes only.
+- A release is a `vX.Y.Z` tag on `main`. Pushing it runs GoReleaser in CI, which builds macOS and Linux binaries (amd64 and arm64), publishes a GitHub Release with checksums, and updates the formula in `ericliswan/homebrew-tap`.
+- Before tagging: CI green on `main`, the manual smoke test (§16) on the test account, and release notes listing what users will notice.
+- A bad release is fixed with a new patch release; published tags are never moved or deleted.
+- Windows isn't packaged (CI still cross-builds it). Binaries aren't signed or notarized yet.
 
 ---
 
@@ -662,7 +678,7 @@ termeownal/
 - [ ] Mark-as-read behavior: on open, or only after scrolling to bottom?
 - [ ] Encrypt the cache in v1, or document and defer?
 - [ ] Which terminals to officially support for inline images?
-- [ ] Instagram's message length limit (not found in Phase 0; check in Phase 1).
+- [ ] Instagram's message length limit (not found yet; needs a live test).
 
 ---
 
