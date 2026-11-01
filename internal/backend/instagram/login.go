@@ -56,19 +56,41 @@ const loginInstructions = `Log in with cookies from your browser:
   4. Close the window without logging out: logging out ends the session.
 Nothing is shown as you paste.`
 
-// Login logs in with cookies copied from a browser.
+// methodField is the first step's one field: how to log in.
+const methodField = "login_method"
+
+// The answers to methodField.
+const (
+	methodPassword = "Username and password"
+	methodCookies  = "Cookies from a browser"
+)
+
+// Login logs in with a username and password, or with cookies copied from a
+// browser.
 type Login struct {
 	// check asks Instagram whose cookies they are.
 	check func(context.Context, *cookies.Cookies) (core.User, error)
+	// newClient returns a logged-out client for a password login.
+	newClient func() webClient
+	// password is the password login in progress, if there is one.
+	password *passwordLogin
 }
 
 var _ core.Authenticator = (*Login)(nil)
 
-// NewLogin returns a cookie login that logs to log.
+// NewLogin returns a login that logs to log.
 func NewLogin(log zerolog.Logger) *Login {
-	return &Login{check: func(ctx context.Context, c *cookies.Cookies) (core.User, error) {
-		return whoAmI(ctx, c, log)
-	}}
+	log = log.With().Str("component", "login").Logger()
+	return &Login{
+		check: func(ctx context.Context, c *cookies.Cookies) (core.User, error) {
+			return whoAmI(ctx, c, log)
+		},
+		newClient: func() webClient {
+			c := &cookies.Cookies{Platform: types.Instagram}
+			c.UpdateValues(nil)
+			return newLoginClient(c, log)
+		},
+	}
 }
 
 // authData is the AuthData a login produces and the backend saves: the
@@ -78,19 +100,47 @@ type authData struct {
 	State   json.RawMessage                   `json:"state,omitempty"`
 }
 
-// Start asks for a paste.
+// Start asks how to log in.
 func (*Login) Start(context.Context) (core.LoginStep, error) {
+	return core.LoginStep{
+		Fields: []core.LoginField{{
+			ID: methodField, Label: "Log in with", Options: []string{methodPassword, methodCookies},
+		}},
+	}, nil
+}
+
+// Submit answers the current step.
+func (l *Login) Submit(ctx context.Context, values map[string]string) (core.LoginStep, error) {
+	if method, ok := values[methodField]; ok {
+		l.password = nil
+		switch method {
+		case methodPassword:
+			l.password = &passwordLogin{newClient: l.newClient, check: l.check}
+			return l.password.restart(""), nil
+		case methodCookies:
+			return pasteStep(), nil
+		}
+		return core.LoginStep{}, errors.New("unknown login method")
+	}
+	if l.password != nil {
+		return l.password.submit(ctx, values)
+	}
+	return l.submitCookies(ctx, values)
+}
+
+// pasteStep asks for a paste.
+func pasteStep() core.LoginStep {
 	return core.LoginStep{
 		Instructions: loginInstructions,
 		Fields: []core.LoginField{{
 			ID: pasteField, Label: "Paste (or press Enter to type each cookie)", Secret: true, Optional: true,
 		}},
-	}, nil
+	}
 }
 
-// Submit takes a paste, or the cookies one by one, and checks them with
-// Instagram.
-func (l *Login) Submit(ctx context.Context, values map[string]string) (core.LoginStep, error) {
+// submitCookies takes a paste, or the cookies one by one, and checks them
+// with Instagram.
+func (l *Login) submitCookies(ctx context.Context, values map[string]string) (core.LoginStep, error) {
 	paste, pasted := values[pasteField]
 	if pasted && strings.TrimSpace(paste) == "" {
 		return cookieStep(), nil
@@ -109,6 +159,11 @@ func (l *Login) Submit(ctx context.Context, values map[string]string) (core.Logi
 		}
 	}
 	c.UpdateValues(known)
+	return result(ctx, c, l.check)
+}
+
+// result checks a login's cookies with Instagram and returns the final step.
+func result(ctx context.Context, c *cookies.Cookies, check func(context.Context, *cookies.Cookies) (core.User, error)) (core.LoginStep, error) {
 	if missing := c.GetMissingCookieNames(); len(missing) > 0 {
 		names := make([]string, len(missing))
 		for i, name := range missing {
@@ -116,7 +171,7 @@ func (l *Login) Submit(ctx context.Context, values map[string]string) (core.Logi
 		}
 		return core.LoginStep{}, fmt.Errorf("missing cookies: %s", strings.Join(names, ", "))
 	}
-	me, err := l.check(ctx, c)
+	me, err := check(ctx, c)
 	if err != nil {
 		return core.LoginStep{}, err
 	}
@@ -196,13 +251,7 @@ func unescape(v string) string {
 // whoAmI loads the inbox page with the cookies, which checks them and says
 // whose they are.
 func whoAmI(ctx context.Context, c *cookies.Cookies, log zerolog.Logger) (core.User, error) {
-	client := instameow.NewClient(instameow.ClientParams{
-		Cookies:  c,
-		Log:      log,
-		Settings: exhttp.SensibleClientSettings,
-		// LoadIndex reports progress to the handler, so it can't be nil.
-		EventHandler: func(context.Context, slidetypes.ClientEvent) error { return nil },
-	})
+	client := newLoginClient(c, log)
 	viewer, _, err := client.LoadIndex(ctx)
 	if err != nil {
 		return core.User{}, fmt.Errorf("load inbox: %w", coreError(err))
@@ -212,6 +261,18 @@ func whoAmI(ctx context.Context, c *cookies.Cookies, log zerolog.Logger) (core.U
 		return core.User{}, errors.New("load inbox: Instagram didn't say which account this is")
 	}
 	return core.User{ID: core.UserID(fbid), Username: viewer.GetUsername(), Name: viewer.GetName()}, nil
+}
+
+// newLoginClient returns a client that's only used to log in, so it
+// ignores events.
+func newLoginClient(c *cookies.Cookies, log zerolog.Logger) *instameow.Client {
+	return instameow.NewClient(instameow.ClientParams{
+		Cookies:  c,
+		Log:      log,
+		Settings: exhttp.SensibleClientSettings,
+		// LoadIndex reports progress to the handler, so it can't be nil.
+		EventHandler: func(context.Context, slidetypes.ClientEvent) error { return nil },
+	})
 }
 
 // coreError wraps err with the core error callers branch on, if there is
@@ -224,6 +285,7 @@ func coreError(err error) error {
 		{httpclient.ErrConsentRequired, core.ErrConsentRequired},
 		{httpclient.ErrAccountSuspended, core.ErrAccountSuspended},
 		{httpclient.ErrTokenInvalidated, core.ErrSessionExpired},
+		{instameow.ErrInstagramWebCheckpointUnsupported, core.ErrVerificationRequired},
 	} {
 		if errors.Is(err, m.upstream) {
 			return fmt.Errorf("%w: %w", m.core, err)

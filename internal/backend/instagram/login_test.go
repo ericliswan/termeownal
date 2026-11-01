@@ -46,8 +46,16 @@ func fakeLogin(err error) (*Login, *map[cookies.MetaCookieName]string) {
 	}}, got
 }
 
-func TestStartAsksForAPaste(t *testing.T) {
-	step, err := (&Login{}).Start(t.Context())
+func TestStartAsksHowToLogIn(t *testing.T) {
+	l, _ := fakeLogin(nil)
+	step, err := l.Start(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(step.Fields) != 1 || step.Fields[0].ID != methodField || len(step.Fields[0].Options) != 2 {
+		t.Fatalf("fields = %+v", step.Fields)
+	}
+	step, err = l.Submit(t.Context(), map[string]string{methodField: methodCookies})
 	if err != nil {
 		t.Fatal(err)
 	}
