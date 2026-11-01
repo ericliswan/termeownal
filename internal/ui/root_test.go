@@ -19,7 +19,9 @@ package ui
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,6 +33,7 @@ import (
 
 	"termeownal/internal/backend/fake"
 	"termeownal/internal/core"
+	"termeownal/internal/ui/composer"
 )
 
 var testNow = time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
@@ -38,21 +41,30 @@ var testNow = time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
 func clock() time.Time { return testNow }
 
 // backendActions runs Actions synchronously against a backend, like app does.
-type backendActions struct{ b core.Backend }
+// Each Send is recorded in sent; while sendErr is set, Send fails with it.
+type backendActions struct {
+	b       core.Backend
+	sendErr error
+	sent    []core.Message
+}
 
-func (a backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
+func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
 	return func() tea.Msg {
 		msgs, more, err := a.b.History(context.Background(), thread, before, n)
 		return HistoryMsg{Thread: thread, Messages: msgs, More: more, Err: err}
 	}
 }
 
-func (a backendActions) Send(thread core.ThreadID, text string) tea.Cmd {
+func (a *backendActions) NewOTID() string { return a.b.NewOTID() }
+
+func (a *backendActions) Send(m core.Message) tea.Cmd {
 	return func() tea.Msg {
-		if err := a.b.Send(context.Background(), thread, text, a.b.NewOTID()); err != nil {
-			return ErrorMsg{Err: err}
+		a.sent = append(a.sent, m)
+		err := a.sendErr
+		if err == nil {
+			err = a.b.Send(context.Background(), m.Thread, m.Text, m.OTID)
 		}
-		return nil
+		return SentMsg{Message: m, Err: err}
 	}
 }
 
@@ -81,17 +93,22 @@ func snapshot(t *testing.T, b core.Backend) SnapshotMsg {
 }
 
 // harness drives a Model by hand, running each returned command to
-// completion before the next message.
+// completion before the next message. Echo timeouts are held in timeouts
+// until expire delivers them.
 type harness struct {
-	t *testing.T
-	b *fake.Backend
-	m Model
+	t        *testing.T
+	b        *fake.Backend
+	act      *backendActions
+	m        Model
+	timeouts []tea.Msg
 }
 
 func newHarness(t *testing.T, w, h int) *harness {
 	t.Helper()
 	b := newFake(t)
-	hs := &harness{t: t, b: b, m: New(backendActions{b}, clock)}
+	act := &backendActions{b: b}
+	hs := &harness{t: t, b: b, act: act, m: New(act, clock)}
+	hs.m.echoTimeout = 0
 	hs.do(tea.WindowSizeMsg{Width: w, Height: h})
 	hs.do(snapshot(t, b))
 	return hs
@@ -111,6 +128,8 @@ func (h *harness) run(cmd tea.Cmd) {
 	}
 	switch msg := cmd().(type) {
 	case nil, tea.QuitMsg:
+	case echoTimeoutMsg:
+		h.timeouts = append(h.timeouts, msg)
 	case tea.BatchMsg:
 		for _, c := range msg {
 			h.run(c)
@@ -138,6 +157,42 @@ func (h *harness) press(keys ...string) {
 			h.do(tea.KeyPressMsg{Code: r, Text: string(r)})
 		}
 	}
+}
+
+// expire delivers the held echo timeouts, as if echoTimeout had passed.
+func (h *harness) expire() {
+	h.t.Helper()
+	msgs := h.timeouts
+	h.timeouts = nil
+	for _, msg := range msgs {
+		h.do(msg)
+	}
+}
+
+// openMessages returns the open thread's messages with text.
+func (h *harness) openMessages(text string) []core.Message {
+	h.t.Helper()
+	id, ok := h.m.chat.Thread()
+	if !ok {
+		h.t.Fatal("no thread open")
+	}
+	var out []core.Message
+	for _, msg := range h.m.threads[id].Messages {
+		if msg.Text == text {
+			out = append(out, msg)
+		}
+	}
+	return out
+}
+
+// wantOne fails unless the open thread has one message with text, in state.
+func (h *harness) wantOne(text string, state core.SendState) core.Message {
+	h.t.Helper()
+	msgs := h.openMessages(text)
+	if len(msgs) != 1 || msgs[0].State != state {
+		h.t.Fatalf("messages %q = %+v, want one in state %d\n%s", text, msgs, state, h.screen())
+	}
+	return msgs[0]
 }
 
 func (h *harness) screen() string { return ansi.Strip(h.m.View().Content) }
@@ -179,16 +234,116 @@ func TestScreens(t *testing.T) {
 	})
 }
 
-func TestSendShowsEcho(t *testing.T) {
+func TestSendShowsLocalCopyUntilEcho(t *testing.T) {
 	h := newHarness(t, 100, 30)
-	h.press("enter", "hello from the test", "enter")
-	if strings.Contains(h.screen(), "hello from the test") {
-		t.Fatal("message shown before its echo")
+	h.press("enter", "hello", "enter")
+	local := h.wantOne("hello", core.Sending)
+	if !strings.Contains(h.screen(), "sending…") {
+		t.Fatalf("local copy not shown as sending:\n%s", h.screen())
+	}
+	echo := h.nextEvent().(core.MessageAdded)
+	if echo.Message.OTID != local.OTID {
+		t.Fatalf("echo OTID = %q, want %q", echo.Message.OTID, local.OTID)
+	}
+	h.do(echo)
+	h.wantOne("hello", core.Sent)
+	h.expire()
+	h.wantOne("hello", core.Sent)
+	if strings.Contains(h.screen(), "sending…") || strings.Contains(h.screen(), "not sent") {
+		t.Fatalf("echoed message still shows a send state:\n%s", h.screen())
+	}
+}
+
+func TestEchoAfterTimeoutReplacesFailedCopy(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "late", "enter")
+	h.expire()
+	h.wantOne("late", core.SendFailed)
+	if !strings.Contains(h.screen(), "✗ not sent · r to retry") {
+		t.Fatalf("failed message not marked:\n%s", h.screen())
 	}
 	h.do(h.nextEvent())
-	if !strings.Contains(h.screen(), "hello from the test") {
-		t.Fatalf("echo not shown:\n%s", h.screen())
+	h.wantOne("late", core.Sent)
+}
+
+func TestRetryReusesOTID(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "never", "enter")
+	echo := h.nextEvent() // held back: as far as the UI knows, it never came
+	h.expire()
+	h.wantOne("never", core.SendFailed)
+
+	h.press("shift+tab", "r")
+	h.wantOne("never", core.Sending)
+	if len(h.act.sent) != 2 || h.act.sent[1].OTID != h.act.sent[0].OTID {
+		t.Fatalf("sends = %+v, want the same OTID twice", h.act.sent)
 	}
+	h.do(echo)
+	h.wantOne("never", core.Sent)
+}
+
+func TestDuplicateEchoChangesNothing(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "twice", "enter")
+	echo := h.nextEvent()
+	h.do(echo)
+	h.do(echo)
+	h.wantOne("twice", core.Sent)
+}
+
+func TestSendErrorMarksFailed(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.act.sendErr = errors.New("boom")
+	h.press("enter", "oops", "enter")
+	h.wantOne("oops", core.SendFailed)
+	if !strings.Contains(h.screen(), "boom") {
+		t.Fatalf("send error not shown:\n%s", h.screen())
+	}
+	if len(h.timeouts) != 0 {
+		t.Fatal("echo timeout started for a failed send")
+	}
+
+	h.act.sendErr = nil
+	h.press("shift+tab", "r")
+	h.do(h.nextEvent())
+	h.wantOne("oops", core.Sent)
+}
+
+func TestSendsOneAtATimeInOrder(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	m, first := h.m.Update(composer.SubmitMsg{Text: "one"})
+	m, second := m.(Model).Update(composer.SubmitMsg{Text: "two"})
+	h.m = m.(Model)
+	if second != nil {
+		t.Fatal("second send started while the first was in flight")
+	}
+	h.run(first)
+	if len(h.act.sent) != 2 || h.act.sent[0].Text != "one" || h.act.sent[1].Text != "two" {
+		t.Fatalf("sends = %+v, want one then two", h.act.sent)
+	}
+	if len(h.m.outbox) != 0 {
+		t.Fatalf("outbox = %+v after both were sent", h.m.outbox)
+	}
+}
+
+func TestCachedLocalCopyDoesntOverride(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "cached", "enter")
+	id, _ := h.m.chat.Thread()
+	stale := h.wantOne("cached", core.Sending)
+	h.expire()
+
+	// History read the local copy from the cache before the UI failed it.
+	page := slices.Clone(h.m.threads[id].Messages)
+	stale.State = core.Sending
+	h.do(HistoryMsg{Thread: id, Messages: append(page, stale), More: true})
+	h.wantOne("cached", core.SendFailed)
+
+	// Or before the echo was stored.
+	h.do(h.nextEvent())
+	h.do(HistoryMsg{Thread: id, Messages: append(page, stale), More: true})
+	h.wantOne("cached", core.Sent)
 }
 
 func TestMessageAddedTwiceChangesNothing(t *testing.T) {
@@ -303,7 +458,7 @@ func TestIncomingTextCantInjectEscapes(t *testing.T) {
 // TestRunsInProgram checks the model in a real Bubble Tea program loop.
 func TestRunsInProgram(t *testing.T) {
 	b := newFake(t)
-	tm := teatest.NewTestModel(t, New(backendActions{b}, clock), teatest.WithInitialTermSize(100, 30))
+	tm := teatest.NewTestModel(t, New(&backendActions{b: b}, clock), teatest.WithInitialTermSize(100, 30))
 	tm.Send(snapshot(t, b))
 	teatest.WaitFor(t, tm.Output(), func(out []byte) bool { return bytes.Contains(out, []byte("COMP2003 project")) },
 		teatest.WithDuration(5*time.Second))

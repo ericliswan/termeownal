@@ -267,7 +267,7 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 1. Generate OTID (`methods.GenerateEpochID()`); insert local message `send_state=pending`, `otid=OTID`.
 2. `SendMessage` with the **short ID** (the long ID also works; short matches upstream and the delta path).
 3. Reconcile when a `NewMessageEvent` arrives with matching `OfflineThreadingID`: replace with real ID, `send_state=sent`.
-4. Error or no echo in ~30 s → `failed`; retry reuses the **same OTID** (prevents duplicates).
+4. Error or no echo 30 s after `Send` succeeds → `failed`; `r` in the messages pane retries the thread's failed messages with the **same OTIDs** (prevents duplicates). The UI sends one message at a time, in order. While running, the UI tracks send states; the cache keeps the local copy (written before `Send`), and the pump marks any still `sending` as `failed` at start.
 5. New DM: `FetchThreadID(ctx, userFBID)`; `ErrThreadNotFound` → empty chat with `GetUserForNewDM` info. The first send uses `RecipientIGIDs: []string{userFBID}` and no thread ID. Its echo arrives with a new short ID; call `FetchThreadID(ctx, userFBID)` again to store the IDs (key = `userFBID`).
 
 ### 7.4 Rendering

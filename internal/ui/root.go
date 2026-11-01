@@ -44,14 +44,21 @@ const minWidth, minHeight = 60, 15
 // historyPage is how many messages one History call asks for.
 const historyPage = 50
 
+// echoTimeout is how long a message the service accepted waits for its echo
+// before it's marked failed.
+const echoTimeout = 30 * time.Second
+
 // Actions runs backend calls for the UI. Each returns a tea.Cmd whose result
 // comes back as the message named in its doc.
 type Actions interface {
 	// History loads older messages; returns a HistoryMsg.
 	History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd
-	// Send sends text; returns an ErrorMsg on failure, otherwise nil. The
-	// message appears when its echo arrives as a core.MessageAdded.
-	Send(thread core.ThreadID, text string) tea.Cmd
+	// NewOTID returns the OTID for a new message.
+	NewOTID() string
+	// Send caches m, a local message, and sends it; returns a SentMsg. It
+	// counts as sent when its echo, with the same OTID, arrives as a
+	// core.MessageAdded. Sending m again can't create a duplicate.
+	Send(m core.Message) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -68,6 +75,19 @@ type HistoryMsg struct {
 	More     bool
 	Err      error
 }
+
+// SentMsg is the result of Actions.Send. Err is nil if the service accepted
+// the message.
+type SentMsg struct {
+	Message core.Message
+	Err     error
+}
+
+// echoTimeoutMsg fires echoTimeout after the service accepted msg.
+type echoTimeoutMsg struct{ msg core.Message }
+
+// errNoEcho marks a message that was accepted but never echoed.
+var errNoEcho = errors.New("send: no confirmation from the server")
 
 // ErrorMsg reports a failed action. It shows in the status bar until the
 // next key press.
@@ -103,6 +123,11 @@ type Model struct {
 	composer composer.Model
 	focus    pane
 
+	// outbox holds local messages to send, oldest first; the first is being
+	// sent. One at a time, so they arrive in order.
+	outbox      []core.Message
+	echoTimeout time.Duration
+
 	width, height int
 	status        core.Status
 	authErr       error
@@ -113,12 +138,13 @@ type Model struct {
 // New returns the UI. now is the clock used to label times.
 func New(act Actions, now func() time.Time) Model {
 	return Model{
-		act:      act,
-		now:      now,
-		threads:  make(map[core.ThreadID]*threadState),
-		list:     threadlist.New(now),
-		chat:     chat.New(now),
-		composer: composer.New(),
+		act:         act,
+		now:         now,
+		echoTimeout: echoTimeout,
+		threads:     make(map[core.ThreadID]*threadState),
+		list:        threadlist.New(now),
+		chat:        chat.New(now),
+		composer:    composer.New(),
 	}
 }
 
@@ -135,8 +161,41 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		return m.key(msg)
 	case composer.SubmitMsg:
-		if id, ok := m.chat.Thread(); ok {
-			return m, m.act.Send(id, msg.Text)
+		id, ok := m.chat.Thread()
+		if !ok {
+			return m, nil
+		}
+		otid := m.act.NewOTID()
+		local := core.Message{ID: core.MessageID("local:" + otid), Thread: id, Sender: m.me.ID, At: m.now(),
+			Text: msg.Text, OTID: otid, State: core.Sending}
+		m.addMessage(local)
+		m.refresh()
+		return m, m.enqueue(local)
+	case SentMsg:
+		if len(m.outbox) > 0 {
+			m.outbox = m.outbox[1:]
+		}
+		var cmds []tea.Cmd
+		if msg.Err != nil {
+			// The echo can beat an error, e.g. a timeout after the server
+			// got the message; then it was sent.
+			if m.setState(msg.Message, core.SendFailed) {
+				m = m.fail(msg.Err)
+			}
+		} else {
+			cmds = append(cmds, tea.Tick(m.echoTimeout, func(time.Time) tea.Msg { return echoTimeoutMsg{msg.Message} }))
+		}
+		if len(m.outbox) > 0 {
+			cmds = append(cmds, m.act.Send(m.outbox[0]))
+		}
+		m.refresh()
+		return m, tea.Batch(cmds...)
+	case echoTimeoutMsg:
+		// Only a message still Sending is affected: once its echo arrives,
+		// the local copy is gone.
+		if m.setState(msg.msg, core.SendFailed) {
+			m = m.fail(errNoEcho)
+			m.refresh()
 		}
 	case SnapshotMsg:
 		m.me = cleanUser(msg.Me)
@@ -222,10 +281,12 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.list, cmd = m.list.Update(k)
 	case paneChat:
-		if s == "pgup" && m.chat.AtTop() {
-			if id, ok := m.chat.Thread(); ok {
-				return m, m.loadOlder(id)
-			}
+		id, ok := m.chat.Thread()
+		switch {
+		case ok && s == "pgup" && m.chat.AtTop():
+			return m, m.loadOlder(id)
+		case ok && s == "r":
+			return m, m.retry(id)
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
@@ -263,6 +324,47 @@ func (m *Model) loadOlder(id core.ThreadID) tea.Cmd {
 	st.loading = true
 	m.refresh()
 	return m.act.History(id, st.Messages[0].ID, historyPage)
+}
+
+// enqueue adds local messages to the outbox, and sends the first if nothing
+// was being sent.
+func (m *Model) enqueue(msgs ...core.Message) tea.Cmd {
+	idle := len(m.outbox) == 0
+	m.outbox = append(m.outbox, msgs...)
+	if !idle || len(m.outbox) == 0 {
+		return nil
+	}
+	return m.act.Send(m.outbox[0])
+}
+
+// retry sends a thread's failed messages again, oldest first, with the same
+// OTIDs.
+func (m *Model) retry(id core.ThreadID) tea.Cmd {
+	var failed []core.Message
+	for _, msg := range m.threads[id].Messages {
+		if msg.State == core.SendFailed {
+			m.setState(msg, core.Sending)
+			msg.State = core.Sending
+			failed = append(failed, msg)
+		}
+	}
+	m.refresh()
+	return m.enqueue(failed...)
+}
+
+// setState sets the state of local message msg, and reports whether it
+// changed. It doesn't once the echo has replaced msg.
+func (m *Model) setState(msg core.Message, state core.SendState) bool {
+	st, ok := m.threads[msg.Thread]
+	if !ok {
+		return false
+	}
+	i := slices.IndexFunc(st.Messages, func(o core.Message) bool { return o.ID == msg.ID && o.State != core.Sent })
+	if i < 0 || st.Messages[i].State == state {
+		return false
+	}
+	st.Messages[i].State = state
+	return true
 }
 
 func (m Model) fail(err error) Model {
@@ -343,12 +445,24 @@ func (m Model) preview(msgs []core.Message) string {
 
 // merge adds msgs to have, replacing ones with the same ID, and keeps the
 // result sorted by time. Applying the same messages twice changes nothing.
+// An echo replaces the local copy with its OTID. A local copy never replaces
+// one in have, whose send state the UI tracks, and is dropped once its echo
+// is in: a cached copy can be read before the echo is stored.
 func merge(have, msgs []core.Message) []core.Message {
 	if len(msgs) == 0 {
 		return have
 	}
 	out := slices.Clone(have)
 	for _, msg := range msgs {
+		if msg.State != core.Sent {
+			if slices.ContainsFunc(out, func(o core.Message) bool {
+				return o.ID == msg.ID || (o.State == core.Sent && o.OTID == msg.OTID)
+			}) {
+				continue
+			}
+		} else if msg.OTID != "" {
+			out = slices.DeleteFunc(out, func(o core.Message) bool { return o.State != core.Sent && o.OTID == msg.OTID })
+		}
 		if i := slices.IndexFunc(out, func(o core.Message) bool { return o.ID == msg.ID }); i >= 0 {
 			out[i] = msg
 		} else {

@@ -95,11 +95,25 @@ func (a actions) history(thread core.ThreadID, before core.MessageID, n int) ([]
 	return a.st.History(a.ctx, thread, before, n)
 }
 
-func (a actions) Send(thread core.ThreadID, text string) tea.Cmd {
+// sendTimeout bounds one Send call, so a stalled one can't hold up the
+// messages queued behind it.
+const sendTimeout = 30 * time.Second
+
+func (a actions) NewOTID() string { return a.b.NewOTID() }
+
+func (a actions) Send(m core.Message) tea.Cmd {
 	return func() tea.Msg {
-		if err := a.b.Send(a.ctx, thread, text, a.b.NewOTID()); err != nil {
-			return ui.ErrorMsg{Err: fmt.Errorf("send: %w", err)}
+		// Cached first, so a failed send survives a restart. On a retry the
+		// local copy is cached already and this does nothing.
+		err := a.st.AddMessage(a.ctx, m)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(a.ctx, sendTimeout)
+			err = a.b.Send(ctx, m.Thread, m.Text, m.OTID)
+			cancel()
 		}
-		return nil
+		if err != nil {
+			err = fmt.Errorf("send: %w", err)
+		}
+		return ui.SentMsg{Message: m, Err: err}
 	}
 }

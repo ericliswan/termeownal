@@ -32,6 +32,7 @@ var helpKeys = [][2]string{
 	{"Alt+Enter", "new line in message"},
 	{"g / G", "top / bottom"},
 	{"PgUp", "page up; at the top, load older"},
+	{"r", "resend failed messages"},
 	{"Esc", "back to the thread list"},
 	{"?", "this help"},
 	{"Ctrl+C", "quit"},

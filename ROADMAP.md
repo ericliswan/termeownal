@@ -377,7 +377,7 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 3. `tea.Cmd` calls `Backend.Send` → `SendMessage` with `IGThreadIGID` set to the short ID (from the ID map, §4.5), `Text`, `OfflineThreadingID`, and reply fields if replying.
 4. Success: keep pending until the echo arrives.
 5. Echo: `NewMessageEvent` whose `Message.OfflineThreadingID` == OTID → replace local row with the real message ID, `send_state=sent`.
-6. Failure, or no echo within ~30 s: `send_state=failed`; UI shows "failed — `r` to retry". Retry reuses the **same OTID** so a late echo still matches and no duplicate appears.
+6. Failure, or no echo within ~30 s: `send_state=failed`; UI shows "✗ not sent · r to retry". Retry reuses the **same OTID** so a late echo still matches and no duplicate appears.
 7. New DM: upstream keys a 1:1 chat by the other user's FBID. Look up the existing DM with `FetchThreadID(ctx, userFBID)`; if it returns `ErrThreadNotFound`, show an empty chat (user info from `GetUserForNewDM`) and create the thread on first send: `SendMessage` with `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID`. The echo carries a short ID we haven't seen; call `FetchThreadID(ctx, userFBID)` again to learn the thread's IDs. Verified in Phase 0 (`docs/ids.md` §6).
 
 Text limits: strip trailing whitespace; reject empty; warn above Instagram's message length limit (still unknown; find it in Phase 1).
@@ -538,7 +538,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `secrets` (keyring + encrypted fallback).
 - [x] `meow login` (cookie flow, all three input forms) and `meow logout`.
 - [x] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
-- [ ] Optimistic send + echo reconciliation + retry.
+- [x] Optimistic send + echo reconciliation + retry.
 - [ ] Unread counts; mark read on focus.
 - [ ] Reconnect handling, status bar states, auth-expired banner.
 

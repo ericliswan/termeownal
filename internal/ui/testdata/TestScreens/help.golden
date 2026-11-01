@@ -3,17 +3,17 @@
 ┃▌   haha yes                   ┃│                                                                 │
 ┃                               ┃│                                                                 │
 ┃  ● COMP2003 project      12:23┃│                                                                 │
-┃    wait what                  ┃│                                                                 │
-┃                     ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓                      │
-┃    Tom              ┃                                                     ┃                      │
-┃    ok               ┃  Keys                                               ┃                      │
+┃    wait what        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓                      │
 ┃                     ┃                                                     ┃                      │
-┃    James, Ben, Chloe┃  Tab / Shift+Tab   move focus                       ┃                      │
-┃    ok               ┃  j k ↑ ↓           move / scroll                    ┃Enter                 │
-┃                     ┃  Enter             open thread / send               ┃                      │
-┃  ● Aisha            ┃  Alt+Enter         new line in message              ┃                      │
-┃    😭😭😭           ┃  g / G             top / bottom                     ┃                      │
-┃                     ┃  PgUp              page up; at the top, load older  ┃                      │
+┃    Tom              ┃  Keys                                               ┃                      │
+┃    ok               ┃                                                     ┃                      │
+┃                     ┃  Tab / Shift+Tab   move focus                       ┃                      │
+┃    James, Ben, Chloe┃  j k ↑ ↓           move / scroll                    ┃                      │
+┃    ok               ┃  Enter             open thread / send               ┃Enter                 │
+┃                     ┃  Alt+Enter         new line in message              ┃                      │
+┃  ● Aisha            ┃  g / G             top / bottom                     ┃                      │
+┃    😭😭😭           ┃  PgUp              page up; at the top, load older  ┃                      │
+┃                     ┃  r                 resend failed messages           ┃                      │
 ┃    Dan              ┃  Esc               back to the thread list          ┃                      │
 ┃    You: brb         ┃  ?                 this help                        ┃                      │
 ┃                     ┃  Ctrl+C            quit                             ┃                      │

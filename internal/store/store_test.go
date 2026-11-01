@@ -322,7 +322,7 @@ func TestReplayChangesNothing(t *testing.T) {
 		},
 		func() error { return s.AddMessage(ctx, msg("a4", dm, anaID, 4)) },
 		func() error { return s.AddMessage(ctx, local("o1", 5)) },
-		func() error { return s.SetSendState(ctx, "local:o1", core.SendFailed) },
+		func() error { return s.FailUnsent(ctx) },
 		func() error { return s.AddMessage(ctx, echo("a5", "o1", 5)) },
 		func() error { return s.MarkRead(ctx, dm, at(4)) },
 		func() error {
@@ -394,14 +394,13 @@ func TestSendReconcile(t *testing.T) {
 		s := withDM(t, msg("a1", dm, anaID, 1))
 		ctx := t.Context()
 		must(t, s.AddMessage(ctx, local("o1", 2)))
-		must(t, s.SetSendState(ctx, "local:o1", core.SendFailed))
+		must(t, s.FailUnsent(ctx)) // the app quit before the echo
 		if st := history(t, s, dm)[1].State; st != core.SendFailed {
 			t.Fatalf("state = %v, want SendFailed", st)
 		}
-		must(t, s.SetSendState(ctx, "local:o1", core.Sending))
-		must(t, s.SetSendState(ctx, "local:o1", core.SendFailed))
+		must(t, s.AddMessage(ctx, local("o1", 2))) // the retry
 		must(t, s.AddMessage(ctx, echo("m1", "o1", 2)))
-		must(t, s.SetSendState(ctx, "local:o1", core.SendFailed)) // a late timeout
+		must(t, s.FailUnsent(ctx)) // the next start
 		sent(t, s)
 	})
 	t.Run("duplicate echo", func(t *testing.T) {
@@ -425,12 +424,6 @@ func TestSendReconcile(t *testing.T) {
 			Messages: []core.Message{msg("a1", dm, anaID, 1), echo("m1", "o1", 2)},
 		}}))
 		sent(t, s)
-	})
-	t.Run("only the echo marks sent", func(t *testing.T) {
-		s := withDM(t)
-		if err := s.SetSendState(t.Context(), "local:o1", core.Sent); err == nil {
-			t.Error("SetSendState(Sent) succeeded")
-		}
 	})
 	t.Run("reaction log entries share an OTID", func(t *testing.T) {
 		s := withDM(t, msg("a1", dm, anaID, 1))
@@ -491,7 +484,7 @@ func TestGapDropsOlderMessages(t *testing.T) {
 			s := withDM(t, cached...)
 			must(t, s.PutHistory(ctx, dm, "m1", nil, false))
 			must(t, s.AddMessage(ctx, local("o1", 3)))
-			must(t, s.SetSendState(ctx, "local:o1", core.SendFailed))
+			must(t, s.FailUnsent(ctx))
 
 			must(t, put(s, overlapping))
 			wantIDs(t, history(t, s, dm), "m1", "m2", "local:o1", "m3", "m4")
