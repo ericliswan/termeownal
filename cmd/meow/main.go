@@ -41,7 +41,11 @@ const usage = `Usage:
   meow [--backend=instagram|fake]  open your DMs; fake shows canned threads, no network
   meow login                       log in to Instagram with cookies from a browser
   meow logout [--purge]            forget the login; --purge also deletes the message cache
+  meow --version                   print the version
 `
+
+// version is set at release build time (-ldflags "-X main.version=...").
+var version = "dev"
 
 func main() {
 	if err := run(); err != nil {
@@ -59,9 +63,11 @@ func run() error {
 	flags.Usage = func() { _, _ = fmt.Fprint(flags.Output(), usage) }
 	backend := new(string)
 	purge := new(bool)
+	showVersion := new(bool)
 	switch cmd {
 	case "":
 		backend = flags.String("backend", "instagram", "")
+		showVersion = flags.Bool("version", false, "")
 	case "login":
 	case "logout":
 		purge = flags.Bool("purge", false, "")
@@ -73,6 +79,10 @@ func run() error {
 	if flags.NArg() > 0 {
 		flags.Usage()
 		return fmt.Errorf("unexpected argument %q", flags.Arg(0))
+	}
+	if *showVersion {
+		fmt.Println("meow", version)
+		return nil
 	}
 
 	paths := config.DefaultPaths()
