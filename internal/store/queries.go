@@ -265,14 +265,12 @@ func (s *Store) MarkRead(ctx context.Context, thread core.ThreadID, until time.T
 	return nil
 }
 
-// SetSendState updates a local message that hasn't been sent: Sending on a
-// retry, SendFailed when sending fails. Only its echo marks it Sent, so once
-// the echo has arrived this does nothing.
-func (s *Store) SetSendState(ctx context.Context, id core.MessageID, state core.SendState) error {
-	if state == core.Sent {
-		return errors.New("cache send state: only the echo marks a message sent")
-	}
-	_, err := s.db.ExecContext(ctx, "UPDATE messages SET send_state = ? WHERE id = ? AND send_state <> 0", state, id)
+// FailUnsent marks every local message still Sending as SendFailed. Call it
+// at start, before anything is sent: a message left Sending was cut off by
+// the last exit. While running, the UI tracks send states; only the echo
+// marks a message Sent.
+func (s *Store) FailUnsent(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE messages SET send_state = ? WHERE send_state = ?", core.SendFailed, core.Sending)
 	if err != nil {
 		return fmt.Errorf("cache send state: %w", err)
 	}
