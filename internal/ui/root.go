@@ -241,6 +241,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case core.StatusChanged:
 		m.status = msg.Status
+		if msg.Status == core.Connected {
+			return m, m.gapFill()
+		}
 	case core.AuthFailed:
 		m.authErr = msg.Err
 	case core.ThreadUpdated:
@@ -333,6 +336,20 @@ func (m *Model) open(id core.ThreadID) tea.Cmd {
 	}
 	m.chat.Show(st.Thread, m.me, st.Messages, st.more, st.loading)
 	return cmd
+}
+
+// gapFill reloads the open thread's newest messages, and marks every other
+// thread's stale, after a connection: a resync can skip live events.
+// shortcut: a thread loading older messages at that moment isn't reloaded
+// until it's opened again; track which page HistoryMsg holds if it matters.
+func (m *Model) gapFill() tea.Cmd {
+	for _, st := range m.threads {
+		st.fetched = false
+	}
+	if id, ok := m.chat.Thread(); ok {
+		return m.open(id)
+	}
+	return nil
 }
 
 func (m *Model) loadOlder(id core.ThreadID) tea.Cmd {
