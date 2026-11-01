@@ -57,10 +57,10 @@ var dave = core.User{ID: 10000000000000009, Username: "dave.example"}
 // ID if it was built with one or has loaded the index.
 type fakeUpstream struct {
 	mailbox *slidetypes.MailboxResponse
-	threads map[string]*slidetypes.ThreadInfo // GetThread, by short ID
-	ids     map[int64]*instameow.ThreadIGIDs  // FetchThreadID
-	page    *slidetypes.PaginateMessagesResponse
-	connect func(context.Context) // Connect's body; by default it waits for ctx
+	threads map[string]*slidetypes.ThreadInfo      // GetThread, by short ID
+	ids     map[int64]*instameow.ThreadIGIDs       // FetchThreadID
+	pages   []*slidetypes.PaginateMessagesResponse // PaginateMessages, in turn; the last repeats
+	connect func(context.Context)                  // Connect's body; by default it waits for ctx
 
 	mu       sync.Mutex
 	params   instameow.ClientParams
@@ -165,7 +165,13 @@ func (f *fakeUpstream) FetchThreadID(_ context.Context, key int64) (*instameow.T
 }
 
 func (f *fakeUpstream) PaginateMessages(_ context.Context, req *slidetypes.PaginateMessagesRequest) (*slidetypes.PaginateMessagesResponse, error) {
-	return f.page, f.call("PaginateMessages", req)
+	f.mu.Lock()
+	page := f.pages[0]
+	if len(f.pages) > 1 {
+		f.pages = f.pages[1:]
+	}
+	f.mu.Unlock()
+	return page, f.call("PaginateMessages", req)
 }
 
 func (f *fakeUpstream) SendMessage(_ context.Context, req *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error) {
@@ -663,14 +669,16 @@ func TestCloseEndsConnect(t *testing.T) {
 
 func TestHistory(t *testing.T) {
 	f := newFakeUpstream(t)
+	var page *slidetypes.PaginateMessagesResponse
 	if err := json.Unmarshal([]byte(`{"fetch__SlideThread":{"id":"x","as_ig_direct_thread":{"id":"3400000000000001","slide_messages":{
 		"edges":[
 			{"node":{"message_id":"mid.$old2","sender_fbid":"100","content_type":"TEXT","timestamp_ms":"1767225200000","text_body":"placeholder old two"}},
 			{"node":{"message_id":"mid.$old1","sender_fbid":"10000000000000001","content_type":"TEXT","timestamp_ms":"1767225100000","text_body":"placeholder old one"}}
 		],
-		"page_info":{"has_next_page":true}}}}}`), &f.page); err != nil {
+		"page_info":{"has_next_page":true}}}}}`), &page); err != nil {
 		t.Fatal(err)
 	}
+	f.pages = append(f.pages, page)
 	b := newTestBackend(t, f, testSession(testState, 400))
 	snapshot(t, b, f)
 
@@ -802,5 +810,40 @@ func TestLogsHoldNoSecretsOrText(t *testing.T) {
 		if strings.Contains(buf.String(), secret) {
 			t.Errorf("log contains %q", secret)
 		}
+	}
+}
+
+func TestHistoryPagesPastReactionLogs(t *testing.T) {
+	f := newFakeUpstream(t)
+	for _, raw := range []string{
+		`{"fetch__SlideThread":{"id":"x","as_ig_direct_thread":{"id":"3400000000000001","slide_messages":{
+			"edges":[{"node":{"message_id":"mid.$log1","sender_fbid":"100","content_type":"REACTION_LOG_XMAT","timestamp_ms":"1767225300000"}}],
+			"page_info":{"has_next_page":true,"end_cursor":"cursor1"}}}}}`,
+		`{"fetch__SlideThread":{"id":"x","as_ig_direct_thread":{"id":"3400000000000001","slide_messages":{
+			"edges":[{"node":{"message_id":"mid.$old1","sender_fbid":"10000000000000001","content_type":"TEXT","timestamp_ms":"1767225100000","text_body":"placeholder old one"}}],
+			"page_info":{"has_next_page":false}}}}}`,
+	} {
+		var page *slidetypes.PaginateMessagesResponse
+		if err := json.Unmarshal([]byte(raw), &page); err != nil {
+			t.Fatal(err)
+		}
+		f.pages = append(f.pages, page)
+	}
+	b := newTestBackend(t, f, testSession(testState, 400))
+	snapshot(t, b, f)
+
+	msgs, more, err := b.History(t.Context(), core.ThreadID(alice.ID), "mid.$fake1a", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != 1 || msgs[0].ID != "mid.$old1" || more {
+		t.Fatalf("History = %+v, %v; want mid.$old1 and no more", msgs, more)
+	}
+	_, reqs := f.takeCalls()
+	if len(reqs) != 2 {
+		t.Fatalf("%d requests, want 2", len(reqs))
+	}
+	if req := reqs[1].(*slidetypes.PaginateMessagesRequest); req.OlderThanMessageID != nil || req.AfterCursor == nil || *req.AfterCursor != "cursor1" {
+		t.Fatalf("second request = %+v, want the first page's end cursor", req)
 	}
 }
