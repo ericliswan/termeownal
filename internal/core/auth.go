@@ -32,6 +32,9 @@ type LoginStep struct {
 	// Instructions are shown before the fields.
 	Instructions string
 	// Fields are the values to ask for, in order. Empty on the final step.
+	// A step with neither Fields nor Result is a wait, such as for a login
+	// approved in another app: show the Instructions, then Submit no values
+	// right away. Submit returns when the wait is over.
 	Fields []LoginField
 	// Result is set on the final step.
 	Result *LoginResult
@@ -45,6 +48,8 @@ type LoginField struct {
 	// Secret values must be read with echo off.
 	Secret   bool
 	Optional bool
+	// Options, if set, are the only answers the field takes.
+	Options []string
 }
 
 // LoginResult is what a successful login produces.

@@ -12,7 +12,7 @@ Instructions for coding agents working in this repository. Read this whole file 
 
 It talks to Instagram through **`instameow`** (`go.mau.fi/mautrix-meta/pkg/instameow`), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. termeownal does **not** run the bridge, Matrix, or any server.
 
-**Status:** Phase 0 (spike) done, findings in `docs/ids.md`. Phase 1's code is done; the human's day-of-use check is pending. Work proceeds phase by phase (§12). Next: Phase 2, password login and the first release.
+**Status:** Phase 0 (spike) done, findings in `docs/ids.md`. Phase 1's code is done; the human's day-of-use check is pending. Work proceeds phase by phase (§12). Phase 2: password login is done; next, the first release.
 
 ---
 
@@ -74,7 +74,8 @@ termeownal/
 │   ├── backend/
 │   │   ├── instagram/            # ONLY importer of upstream (rule 1)
 │   │   │   ├── client.go         # construction, resume paths, connect
-│   │   │   ├── login.go          # cookie login; later password step machine
+│   │   │   ├── login.go          # login method choice, cookie login
+│   │   │   ├── password.go       # password login step machine
 │   │   │   ├── convert.go        # slidetypes → core
 │   │   │   ├── events.go         # ClientEvent / Delta → core.Event
 │   │   │   ├── ids.go            # ThreadKey ↔ short ID ↔ long ID
@@ -253,7 +254,9 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - Instructions shown to the user: use a Chromium-based browser (the library sends a fixed desktop-Chrome user agent), private window, copy cookies from DevTools, **close the window without logging out** (logging out kills `sessionid`).
 - Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), **then** save the session, so a new session never shows the old account's cache. Only the cookies are saved, so the first `meow` after a login is a cold start.
 - `cmd/meow/login.go` drives any `core.Authenticator`, so the fake one tests it. Answers are read in raw mode with bracketed paste: the terminal's line editor caps a line (1024 bytes on macOS), shorter than a cURL command. Enter inside a paste or after a `\` is a newline; Ctrl+C or Ctrl+D on an empty answer cancels.
-- **Password (Phase 2, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
+- `Start` asks for the method (a field with `Options`); the cookie path is above, the password path is `password.go`.
+- **Password (best effort):** a step machine mirroring the web half of `login_native.go`: credentials (→ cookie consent) → a 2FA code, or the auth platform (method choice, code, approval in the app) → account picker → cookies → `whoAmI`. Upstream's `*bridgev2.LoginStep`s are converted in the adapter: user input → fields (`select` → `Options`; `CanCancel` → an empty answer sends `back`); display-and-wait with a code or nothing → a step with no fields, which `meow login` submits at once and which returns when the wait ends. Captcha, QR, cookie or any other browser-only step → end with "choose cookies". Never store the password; only cookies are saved, so the next `meow` is a cold start. Challenge URLs carry tokens: never log them or put them in errors.
+- Password shortcuts: a challenge or checkpoint after the password ends the login with `ErrVerificationRequired` (upstream tries its CAA login next), and "try another way" isn't offered during an approval wait.
 
 ### 7.2 Session storage (`secrets`)
 - One file `session.enc` (cookies, `DumpState()` blob, seq ID + timestamp) in the data dir, mode `0600`, written atomically (temp + rename; the rename isn't synced, so a power cut can undo the last save but never leaves a mix).
