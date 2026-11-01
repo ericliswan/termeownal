@@ -73,7 +73,9 @@ type SnapshotMsg struct {
 
 // HistoryMsg is the result of Actions.History.
 type HistoryMsg struct {
-	Thread   core.ThreadID
+	Thread core.ThreadID
+	// Before is the History call's before: empty for the newest page.
+	Before   core.MessageID
 	Messages []core.Message
 	More     bool
 	Err      error
@@ -234,8 +236,13 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		msgs, dropped := mergePage(st.Messages, cleanThread(core.Thread{Messages: msg.Messages}).Messages)
 		st.Messages = msgs
-		st.more, st.fetched = msg.More || dropped, true
+		st.more = msg.More || dropped
+		st.fetched = st.fetched || msg.Before == ""
 		m.refresh()
+		// A connection while older messages loaded left the newest page stale.
+		if id, ok := m.chat.Thread(); ok && id == msg.Thread && !st.fetched {
+			return m, m.open(id)
+		}
 	case ErrorMsg:
 		return m.fail(msg.Err), nil
 
@@ -339,9 +346,8 @@ func (m *Model) open(id core.ThreadID) tea.Cmd {
 }
 
 // gapFill reloads the open thread's newest messages, and marks every other
-// thread's stale, after a connection: a resync can skip live events.
-// shortcut: a thread loading older messages at that moment isn't reloaded
-// until it's opened again; track which page HistoryMsg holds if it matters.
+// thread's stale, after a connection: a resync can skip live events. A thread
+// loading older messages reloads once they arrive.
 func (m *Model) gapFill() tea.Cmd {
 	for _, st := range m.threads {
 		st.fetched = false
