@@ -117,3 +117,16 @@ func (a actions) Send(m core.Message) tea.Cmd {
 		return ui.SentMsg{Message: m, Err: err}
 	}
 }
+
+func (a actions) MarkRead(upTo core.Message) tea.Cmd {
+	return func() tea.Msg {
+		err := a.b.MarkRead(a.ctx, upTo)
+		if err == nil {
+			err = a.st.MarkRead(a.ctx, upTo.Thread, upTo.At)
+		}
+		if err != nil {
+			return ui.ErrorMsg{Err: fmt.Errorf("mark read: %w", err)}
+		}
+		return nil
+	}
+}

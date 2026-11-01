@@ -41,11 +41,13 @@ var testNow = time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
 func clock() time.Time { return testNow }
 
 // backendActions runs Actions synchronously against a backend, like app does.
-// Each Send is recorded in sent; while sendErr is set, Send fails with it.
+// Each Send is recorded in sent, and each MarkRead in read; while sendErr is
+// set, Send fails with it.
 type backendActions struct {
 	b       core.Backend
 	sendErr error
 	sent    []core.Message
+	read    []core.Message
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -65,6 +67,16 @@ func (a *backendActions) Send(m core.Message) tea.Cmd {
 			err = a.b.Send(context.Background(), m.Thread, m.Text, m.OTID)
 		}
 		return SentMsg{Message: m, Err: err}
+	}
+}
+
+func (a *backendActions) MarkRead(upTo core.Message) tea.Cmd {
+	return func() tea.Msg {
+		a.read = append(a.read, upTo)
+		if err := a.b.MarkRead(context.Background(), upTo); err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return nil
 	}
 }
 
@@ -401,6 +413,41 @@ func TestUnreadOnlyWhenNotOpen(t *testing.T) {
 	if !h.m.threads[other].Unread {
 		t.Error("other thread not marked unread")
 	}
+}
+
+func TestMarkReadOnlyWhenSeen(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.do(tea.BlurMsg{})
+	h.press("enter")
+	id, _ := h.m.chat.Thread()
+	incoming := func(mid core.MessageID) {
+		h.t.Helper()
+		h.do(core.MessageAdded{Message: core.Message{ID: mid, Thread: id, Sender: 101, At: testNow, Text: string(mid)}})
+	}
+	wantRead := func(step string, unread bool, ids ...core.MessageID) {
+		t.Helper()
+		var got []core.MessageID
+		for _, m := range h.act.read {
+			got = append(got, m.ID)
+		}
+		if h.m.threads[id].Unread != unread || !slices.Equal(got, ids) {
+			t.Fatalf("%s: unread = %v, MarkRead calls = %v; want %v, %v", step, h.m.threads[id].Unread, got, unread, ids)
+		}
+	}
+	incoming("mid.a")
+	wantRead("blurred", true)
+	h.do(tea.FocusMsg{})
+	wantRead("focused", false, "mid.a")
+	incoming("mid.b")
+	wantRead("message while focused", false, "mid.a", "mid.b")
+	h.press("esc", "?") // ? in the composer is text
+	incoming("mid.c")
+	wantRead("help open", true, "mid.a", "mid.b")
+	h.press("esc")
+	wantRead("help closed", false, "mid.a", "mid.b", "mid.c")
+	h.do(tea.WindowSizeMsg{Width: 50, Height: 30})
+	incoming("mid.d")
+	wantRead("too small", true, "mid.a", "mid.b", "mid.c")
 }
 
 func TestPgUpAtTopLoadsOlder(t *testing.T) {

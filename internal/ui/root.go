@@ -59,6 +59,9 @@ type Actions interface {
 	// counts as sent when its echo, with the same OTID, arrives as a
 	// core.MessageAdded. Sending m again can't create a duplicate.
 	Send(m core.Message) tea.Cmd
+	// MarkRead marks upTo's thread read up to upTo, on the service and in
+	// the cache; returns an ErrorMsg if that fails, otherwise nil.
+	MarkRead(upTo core.Message) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -128,6 +131,10 @@ type Model struct {
 	outbox      []core.Message
 	echoTimeout time.Duration
 
+	// blurred is set while the terminal reports it isn't focused. One that
+	// doesn't report focus counts as focused.
+	blurred bool
+
 	width, height int
 	status        core.Status
 	authErr       error
@@ -151,9 +158,21 @@ func New(act Actions, now func() time.Time) Model {
 // Init does nothing: app sends the threads as SnapshotMsgs.
 func (m Model) Init() tea.Cmd { return nil }
 
-// Update handles input, action results and core events.
+// Update handles input, action results and core events, then marks the open
+// thread read if the user can see it.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	nm := next.(Model)
+	read := nm.markRead()
+	return nm, tea.Batch(cmd, read)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.FocusMsg:
+		m.blurred = false
+	case tea.BlurMsg:
+		m.blurred = true
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
@@ -326,6 +345,24 @@ func (m *Model) loadOlder(id core.ThreadID) tea.Cmd {
 	return m.act.History(id, st.Messages[0].ID, historyPage)
 }
 
+// markRead marks the open thread read up to its newest message if it's
+// unread and on screen in a focused terminal.
+func (m *Model) markRead() tea.Cmd {
+	id, ok := m.chat.Thread()
+	if !ok || m.blurred || m.help || m.width < minWidth || m.height < minHeight || !m.threads[id].Unread {
+		return nil
+	}
+	msgs := m.threads[id].Messages
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].State == core.Sent { // local copies have no server ID yet
+			m.threads[id].Unread = false
+			m.refresh()
+			return m.act.MarkRead(msgs[i])
+		}
+	}
+	return nil // until the thread's messages load
+}
+
 // enqueue adds local messages to the outbox, and sends the first if nothing
 // was being sent.
 func (m *Model) enqueue(msgs ...core.Message) tea.Cmd {
@@ -403,10 +440,8 @@ func (m *Model) addMessage(msg core.Message) {
 	if msg.At.After(st.LastActivity) {
 		st.LastActivity = msg.At
 	}
-	// shortcut: opening a thread doesn't mark it read yet; that lands with
-	// the focus-aware mark-read item.
-	if open, ok := m.chat.Thread(); msg.Sender != m.me.ID && (!ok || open != msg.Thread) {
-		st.Unread = true
+	if msg.Sender != m.me.ID {
+		st.Unread = true // until markRead sees the user can read it
 	}
 }
 
@@ -514,6 +549,7 @@ func (m Model) View() tea.View {
 	v := tea.NewView(m.render())
 	v.AltScreen = true
 	v.WindowTitle = "meow"
+	v.ReportFocus = true
 	return v
 }
 

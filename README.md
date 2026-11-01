@@ -56,7 +56,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - A thread list, a chat view and a composer, with Vim-style keys
 - Your threads and their history, with older messages loaded as you scroll up
 - Sending, and live incoming messages, renames and new threads
-- Unread markers that clear when you read a thread on another device
+- Unread markers; opening a thread marks it read, here and on Instagram (only while the terminal is focused)
 - Instant startup from a local cache
 
 **Still to come in the MVP**
