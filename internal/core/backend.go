@@ -25,6 +25,7 @@ type Backend interface {
 	Restore(ctx context.Context, s Session) error
 
 	// Snapshot fetches the logged-in user and the most recent threads. The
+	// user's Username and Name are empty if the backend can't tell them. The
 	// app calls it from the goroutine that reads Events, so it must not wait
 	// for Events to be read.
 	Snapshot(ctx context.Context) (me User, threads []Thread, err error)

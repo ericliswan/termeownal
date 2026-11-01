@@ -59,6 +59,9 @@ type pump struct {
 	failed bool
 	// wait is how long to wait before retry n, from 0.
 	wait func(n int) time.Duration
+	// me is the account as last cached or snapshotted, for a snapshot that
+	// doesn't know the username.
+	me core.User
 }
 
 func newPump(b core.Backend, st *store.Store, to uiSender, log zerolog.Logger) *pump {
@@ -100,6 +103,7 @@ func (p *pump) run(ctx context.Context) {
 	if me, threads, err := p.st.Snapshot(ctx, snapshotMessages); err != nil {
 		p.report(ctx, err)
 	} else {
+		p.me = me
 		p.ui.Send(ui.SnapshotMsg{Me: me, Threads: threads})
 	}
 	p.sync(ctx)
@@ -130,6 +134,10 @@ func (p *pump) sync(ctx context.Context) {
 			return
 		}
 	}
+	if me.Username == "" && me.ID == p.me.ID {
+		me = p.me
+	}
+	p.me = me
 	if err := p.st.SetMe(ctx, me); err != nil {
 		p.writeFailed(ctx, err)
 	} else if err := p.st.PutThreads(ctx, threads); err != nil {
