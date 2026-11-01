@@ -22,6 +22,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"termeownal/internal/core"
 )
 
 // testConsole answers from input, with no terminal.
@@ -93,5 +95,23 @@ func TestPassphraseIsTypedTwiceWhenNew(t *testing.T) {
 	c, _ = testConsole("old\r")
 	if got, err := c.passphrase(false); err != nil || string(got) != "old" {
 		t.Errorf("passphrase = %q, %v", got, err)
+	}
+}
+
+func TestFieldTakesOnlyItsOptions(t *testing.T) {
+	f := core.LoginField{Label: "Log in with", Options: []string{"Password", "Cookies"}}
+	c, out := testConsole("3\rx\r2\r Password \r")
+	for _, want := range []string{"Cookies", "Password"} {
+		if got, err := c.field(f); err != nil || got != want {
+			t.Fatalf("field = %q, %v; want %q", got, err, want)
+		}
+	}
+	if !strings.Contains(out.String(), "  1. Password\n  2. Cookies\n") || strings.Count(out.String(), "from 1 to 2") != 2 {
+		t.Errorf("output = %q", out.String())
+	}
+	f.Optional = true
+	c, _ = testConsole("\r")
+	if got, err := c.field(f); err != nil || got != "" {
+		t.Errorf("optional field = %q, %v; want it left empty", got, err)
 	}
 }

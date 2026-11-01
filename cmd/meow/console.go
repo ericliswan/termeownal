@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -88,12 +89,27 @@ func (c *console) ask(label string, secret bool) (string, error) {
 	return s, err
 }
 
-// field asks for a login field, again while a required one is empty.
+// field asks for a login field, again while a required one is empty. A field
+// with options lists them and takes a number or an option's text.
 func (c *console) field(f core.LoginField) (string, error) {
+	for i, o := range f.Options {
+		c.printf("  %d. %s\n", i+1, o)
+	}
 	for {
 		s, err := c.ask(f.Label, f.Secret)
-		if err != nil || f.Optional || strings.TrimSpace(s) != "" {
+		s2 := strings.TrimSpace(s)
+		switch {
+		case err != nil || s2 == "" && f.Optional:
 			return s, err
+		case len(f.Options) > 0:
+			for i, o := range f.Options {
+				if s2 == o || s2 == strconv.Itoa(i+1) {
+					return o, nil
+				}
+			}
+			c.printf("Type a number from 1 to %d.\n", len(f.Options))
+		case s2 != "":
+			return s, nil
 		}
 	}
 }

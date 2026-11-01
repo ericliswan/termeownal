@@ -39,7 +39,7 @@ import (
 
 const usage = `Usage:
   meow [--backend=instagram|fake]  open your DMs; fake shows canned threads, no network
-  meow login                       log in to Instagram with cookies from a browser
+  meow login                       log in to Instagram with a password or browser cookies
   meow logout [--purge]            forget the login; --purge also deletes the message cache
   meow --version                   print the version
 `

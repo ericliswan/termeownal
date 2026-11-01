@@ -34,9 +34,9 @@ var loginHints = []struct {
 	err  error
 	hint string
 }{
-	{core.ErrSessionExpired, "Instagram didn't accept the cookies. Copy them again from a browser window that's still logged in."},
+	{core.ErrSessionExpired, "Instagram didn't accept the login. If you pasted cookies, copy them again from a browser window that's still logged in."},
 	{core.ErrRateLimited, "Instagram is rate-limiting this account; wait a while before retrying."},
-	{core.ErrVerificationRequired, "Instagram wants to verify this login. Complete the check in the app or website, then run `meow login`."},
+	{core.ErrVerificationRequired, "Instagram wants to verify this login. Complete the check in the app or website, then run `meow login` again; logging in with cookies from a browser also works."},
 	{core.ErrConsentRequired, "Accept Instagram's pending terms, then retry."},
 	{core.ErrAccountSuspended, "This account is suspended."},
 }
