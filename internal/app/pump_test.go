@@ -491,3 +491,36 @@ func TestBackoff(t *testing.T) {
 		t.Errorf("backoff(1000) = %v", d)
 	}
 }
+
+// anonymous is a backend whose snapshot has no username, as Instagram's is
+// on a fast or warm start with an empty inbox.
+type anonymous struct{ *fake.Backend }
+
+func (a anonymous) Snapshot(ctx context.Context) (core.User, []core.Thread, error) {
+	me, threads, err := a.Backend.Snapshot(ctx)
+	return core.User{ID: me.ID}, threads, err
+}
+
+func TestSnapshotKeepsTheCachedUsername(t *testing.T) {
+	ctx := context.Background()
+	b := restoredFake(t)
+	cached, _, err := b.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	st := openStore(t)
+	if err := st.SetMe(ctx, cached); err != nil {
+		t.Fatal(err)
+	}
+	rec := &recorder{}
+	p := newPump(anonymous{b}, st, rec, zerolog.Nop())
+	start(t, p)
+
+	waitFor(t, "the backend's snapshot", func() bool { return len(sentOf[ui.SnapshotMsg](rec.sent())) == 2 })
+	if got := sentOf[ui.SnapshotMsg](rec.sent())[1].Me; got != cached {
+		t.Errorf("UI got %+v, want %+v", got, cached)
+	}
+	if got, _, err := st.Snapshot(ctx, 0); err != nil || got != cached {
+		t.Errorf("cache has %+v, %v; want %+v", got, err, cached)
+	}
+}

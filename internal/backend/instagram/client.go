@@ -242,8 +242,8 @@ func (b *Backend) snapshot(ctx context.Context) (core.User, []core.Thread, error
 		}
 		threads = append(threads, convertThread(t, me.ID, b.log))
 	}
-	// shortcut: a warm or fast start with no threads has no username, so the
-	// cached one is blanked; keep the stored one if anyone has an empty inbox.
+	// A warm or fast start with no threads has no username; the app keeps the
+	// cached one.
 	return me, threads, nil
 }
 
