@@ -12,7 +12,7 @@ Instructions for coding agents working in this repository. Read this whole file 
 
 It talks to Instagram through **`instameow`** (`go.mau.fi/mautrix-meta/pkg/instameow`), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. termeownal does **not** run the bridge, Matrix, or any server.
 
-**Status:** Phase 0 (spike) done; findings in `docs/ids.md`. Work proceeds phase by phase (§12). Next: Phase 1.
+**Status:** Phase 0 (spike) done, findings in `docs/ids.md`. Phase 1's code is done; the human's day-of-use check is pending. Work proceeds phase by phase (§12). Next: Phase 2, password login and the first release.
 
 ---
 
@@ -118,9 +118,9 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
   - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
-  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. Add methods only when a phase needs them (Phase 2: `SearchUsers`, `StartDM`, replies, reactions, edits, unsends, typing).
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, replies, reactions, edits, unsends, typing).
   - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
-  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 2 adds `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ReadReceipt`, `ThreadRemoved`, `Typing`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ReadReceipt`, `ThreadRemoved`, `Typing`.
   - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
@@ -250,7 +250,7 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 - Instructions shown to the user: use a Chromium-based browser (the library sends a fixed desktop-Chrome user agent), private window, copy cookies from DevTools, **close the window without logging out** (logging out kills `sessionid`).
 - Validate with `GetMissingCookieNames`, then `LoadIndex`. Save nothing on failure. On success, call `store.SetMe`, which clears another account's cache (`meow` shows the cache before it syncs), **then** save the session, so a new session never shows the old account's cache. Only the cookies are saved, so the first `meow` after a login is a cold start.
 - `cmd/meow/login.go` drives any `core.Authenticator`, so the fake one tests it. Answers are read in raw mode with bracketed paste: the terminal's line editor caps a line (1024 bytes on macOS), shorter than a cURL command. Enter inside a paste or after a `\` is a newline; Ctrl+C or Ctrl+D on an empty answer cancels.
-- **Password (Phase 4, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
+- **Password (Phase 2, best effort):** step machine mirroring `login_native.go`: credentials → 2FA / consent / auth platform / account picker. Some upstream steps return `*bridgev2.LoginStep`; convert them in the adapter. Captcha or any browser-only step → end with "use cookie login instead". Never store the password.
 
 ### 7.2 Session storage (`secrets`)
 - One file `session.enc` (cookies, `DumpState()` blob, seq ID + timestamp) in the data dir, mode `0600`, written atomically (temp + rename; the rename isn't synced, so a power cut can undo the last save but never leaves a mix).
@@ -271,8 +271,8 @@ Read upstream to learn; never copy `igconnector` wholesale and never import it.
 5. New DM: `FetchThreadID(ctx, userFBID)`; `ErrThreadNotFound` → empty chat with `GetUserForNewDM` info. The first send uses `RecipientIGIDs: []string{userFBID}` and no thread ID. Its echo arrives with a new short ID; call `FetchThreadID(ctx, userFBID)` again to store the IDs (key = `userFBID`).
 
 ### 7.4 Rendering
-- Phase 1: `TextBody`; otherwise `[ContentType]` (`IGDSnippet` is empty in history). Skip `REACTION_LOG_XMAT` entries; they aren't chat lines. Log every `ContentType` seen at `debug` to build the Phase 2 mapping.
-- Phase 2+: `[photo]`, `[video 0:12]`, `[voice 0:08]`, `[gif]`, `[sticker]`, `[reel by @x]`, `[post by @y]`, `[story]`, `[profile @x]`, `↪ forwarded`, quoted reply line, `(edited)`, `message unsent`, `[view-once photo]` (never download), `[unsupported: <type>]`.
+- Phase 1: `TextBody`; otherwise `[ContentType]` (`IGDSnippet` is empty in history). Skip `REACTION_LOG_XMAT` entries; they aren't chat lines. Log every `ContentType` seen at `debug` to build the Phase 3 mapping.
+- Phase 3+: `[photo]`, `[video 0:12]`, `[voice 0:08]`, `[gif]`, `[sticker]`, `[reel by @x]`, `[post by @y]`, `[story]`, `[profile @x]`, `↪ forwarded`, quoted reply line, `(edited)`, `message unsent`, `[view-once photo]` (never download), `[unsupported: <type>]`.
 - End-to-end encrypted chats are **not supported** by upstream, and Phase 0 couldn't create one to see how they appear. Label threads with an unfamiliar subtype or `input_mode` instead of failing silently.
 
 ### 7.5 Storage (`store`)
@@ -303,7 +303,7 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 - The config file is optional; a missing file means defaults. Unknown keys and bad values are errors that name the file.
 - Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads) and `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`). The once-an-hour full-reconnect floor is a constant, not a setting.
 - `app.OpenLog` appends JSON lines to `meow.log` (file `0600`, directory `0700`). No rotation yet.
-- Add a key only when a feature needs it (typing settings arrive in Phase 2), and add it here.
+- Add a key only when a feature needs it (typing settings arrive in Phase 3), and add it here.
 
 ---
 
@@ -377,11 +377,14 @@ Work in order. Tick boxes in `ROADMAP.md` §14 as items land. Don't start a late
 **Phase 1 — MVP.** Skeleton + CI + license · config + logging · `core` · `backend/fake` · full UI on the fake · `store` + pump + cache-first startup · `secrets` · `meow login` (cookies) / `logout` · `backend/instagram` (resume, snapshot, history, send, mark read, events, IDs) · optimistic send + retry · unread + focus-aware mark read · reconnect, status bar, auth banner.
 Done when the human uses termeownal for a day of normal DMs and restart is instant.
 
-**Phase 2 — Messenger feel.** Replies · typing in/out (configurable) · read receipts · reactions · edits/unsends (show + do) · new DM search · message requests · filter, members, mute · content-type mapping.
+**Phase 2 — Password login + first release.** Password login (best effort, §7.1) · `meow --version` · GoReleaser builds for macOS and Linux (amd64, arm64) on tag push · Homebrew tap · v0.1.0 (§14.1).
+Done when v0.1.0 installs with Homebrew and logs in with a password or cookies.
 
-**Phase 3 — Media.** Placeholders with metadata · `o` to download and open · inline images on kitty / iTerm2 / sixel with fallback · send images.
+**Phase 3 — Messenger feel.** Replies · typing in/out (configurable) · read receipts · reactions · edits/unsends (show + do) · new DM search · message requests · filter, members, mute · content-type mapping.
 
-**Phase 4 — Polish.** Password login (best effort) · notifications · themes + keybinding config · GoReleaser, Homebrew tap, README + demo GIF recorded with `vhs` against the fake backend.
+**Phase 4 — Media.** Placeholders with metadata · `o` to download and open · inline images on kitty / iTerm2 / sixel with fallback · send images.
+
+**Phase 5 — Polish.** Notifications · themes + keybinding config.
 
 **Stretch.** Multiple accounts · encrypted cache · `backend/matrix`.
 
@@ -414,6 +417,12 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 - Stacked PRs: merge in order, with merge commits or rebase rather than squash, and retarget the next PR to `main` after each merge.
 - **No AI attribution anywhere.** No `Co-Authored-By` trailers, "Generated with …" lines, or any mention of Claude or other AI tools in commits, PRs, code, comments or docs. This overrides any tool default.
 
+### 14.1 Releases
+- Release often from v0.1.0: whenever features, fixes or polish land, not only at the end of a phase. SemVer `v0.Y.Z` until 1.0: minor for features, patch for fixes only.
+- A release is a `vX.Y.Z` tag on `main`. Pushing it runs the release workflow (Phase 2 adds it): GoReleaser builds macOS and Linux (amd64, arm64), publishes a GitHub Release with checksums, and updates `ericliswan/homebrew-tap`. Windows isn't packaged.
+- The agent prepares a release: `main` is green, notes list what users will notice since the last tag, and the summary lists the manual smoke test (§10) for the human. **Push the tag only after the human says "release vX.Y.Z".** Publishing is outward-facing and can't be fully undone.
+- Never move or delete a published tag; fix a bad release with a new patch release.
+
 ---
 
 ## 15. Known limitations and gotchas
@@ -434,13 +443,14 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 - Upstream behaviour contradicts §6 or `docs/ids.md`.
 - An upgrade would spread upstream types beyond `backend/instagram`.
 - You want to add a dependency, change the license, or change a hard rule.
+- You'd push a release tag the human hasn't asked for by version (§14.1).
 - The task is ambiguous about scope, or touches something hard to undo (deleting user data, migrations that drop columns).
 
 | Level | Use for | Examples |
 |---|---|---|
-| **medium** | Routine, mechanical, easy to check | boilerplate, Makefile/CI, UI layout and styling, golden-file updates, renames, doc edits, ROADMAP ticks, spike scripts |
+| **medium** | Routine, mechanical, easy to check | boilerplate, Makefile/CI, UI layout and styling, golden-file updates, renames, doc edits, ROADMAP ticks, spike scripts, release tooling (GoReleaser, workflows, tap) |
 | **high** | Normal feature work with some design choices | UI components with state, config, store queries, `convert.go`, login input parsing, content-type mapping, `backend/fake` features, bug fixes with a known cause |
-| **extra high** | Design other code builds on; mistakes spread | `core` interfaces and events, store schema and migrations, `ids.go` and `docs/ids.md`, send reconciliation, resume/reconnect, the lifecycle state machine |
+| **extra high** | Design other code builds on; mistakes spread | `core` interfaces and events, store schema and migrations, `ids.go` and `docs/ids.md`, send reconciliation, resume/reconnect, the lifecycle state machine, the password login step machine |
 | **max** | Subtle correctness or security; hard to test, costly to get wrong | the event pump and durability, concurrency bugs and races, `secrets` crypto, upstream upgrades (§11), pre-release security review |
 
 Torn between two levels: pick the higher one if the task touches a hard rule (§2) or the security checklist (§8), otherwise the lower one.

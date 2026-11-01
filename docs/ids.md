@@ -49,8 +49,8 @@ The same ID goes by different names in different places. Trust this table, not G
 | `MarkRead` + `MarkReadValidation` | long in `Metadata.IGThreadIGID`, newest message ID in `Data.MessageID` | — | yes, cleared on the phone |
 | `FetchThreadID(ctx, int64)` | the other user's FBID (= 1:1 key) | `{LongID, ShortID}` or `ErrThreadNotFound` | yes for 1:1; not tried with a group key |
 | `GetUserForNewDM(ctx, fbid)` | FBID | user info | yes |
-| `SetTyping(ctx, id, bool)` | short (per upstream) | — | no (Phase 2) |
-| `SendReaction`, `EditMessage`, `UnsendMessage` | — | — | no (Phase 2) |
+| `SetTyping(ctx, id, bool)` | short (per upstream) | — | no (Phase 3) |
+| `SendReaction`, `EditMessage`, `UnsendMessage` | — | — | no (Phase 3) |
 
 **We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead` and to recognise incoming typing.
 
@@ -116,8 +116,8 @@ All three paths in AGENTS §6.5 worked:
 ## 9. Not verified
 
 - **End-to-end encrypted chats:** the test phone offered no way to start one. Upstream doesn't support them (AGENTS §15). If a thread with an unfamiliar subtype or `input_mode` shows up, label it instead of failing.
-- **Message requests:** `PaginateMailbox` for folder `PENDING` returned nothing because no request existed. Revisit in Phase 2 with an account the test account doesn't follow.
-- Outgoing typing, reactions, edits and unsends (Phase 2).
+- **Message requests:** `PaginateMailbox` for folder `PENDING` returned nothing because no request existed. Revisit in Phase 3 with an account the test account doesn't follow.
+- Outgoing typing, reactions, edits and unsends (Phase 3).
 - Edits, unsends and read receipts in a 1:1.
 - `FetchThreadID` with a group key.
 - Instagram's message length limit (ROADMAP §18).
