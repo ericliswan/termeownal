@@ -96,7 +96,7 @@ The rest of this README writes `./bin/meow`; on Windows, type `.\bin\meow.exe` i
 
 termeownal has been used with a real account only on macOS so far. CI runs the tests on Linux and checks that it builds for Windows. If something doesn't work on your system, please [open an issue](https://github.com/ericliswan/termeownal/issues).
 
-Prebuilt releases and a Homebrew tap are planned for later.
+Prebuilt releases and a Homebrew tap are coming with v0.1.0.
 
 ## Logging in
 

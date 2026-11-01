@@ -1,4 +1,4 @@
-.PHONY: build static test race lint fmt check demo
+.PHONY: build static test race lint fmt check demo snapshot
 
 build:
 	go build ./...
@@ -28,3 +28,7 @@ check:
 # Records the README demo against the fake backend (needs vhs).
 demo: static
 	vhs docs/demo.tape
+
+# Builds every release target into dist/ without publishing (needs goreleaser).
+snapshot:
+	goreleaser release --snapshot --clean

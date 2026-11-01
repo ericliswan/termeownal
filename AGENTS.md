@@ -50,6 +50,9 @@ Keep this section in sync with the `Makefile`.
 | Format | `gofmt -w . && goimports -w .` |
 | Update UI golden files | `go test ./internal/ui/... -update` |
 | Record the README demo GIF (needs `vhs`, fake backend) | `make demo` |
+| Check the release config | `goreleaser check` (CI runs it) |
+| Build every release target into `dist/` without publishing | `make snapshot` (needs `goreleaser`) |
+| Print the version (`dev` unless built by GoReleaser) | `meow --version` |
 
 Requirements: **Go 1.26 or newer** (upstream's `go.mod` declares `go 1.26.0`; its `toolchain` line doesn't apply to us). Pure Go — no cgo. SQLite is `modernc.org/sqlite`.
 
@@ -419,8 +422,9 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 
 ### 14.1 Releases
 - Release often from v0.1.0: whenever features, fixes or polish land, not only at the end of a phase. SemVer `v0.Y.Z` until 1.0: minor for features, patch for fixes only.
-- A release is a `vX.Y.Z` tag on `main`. Pushing it runs the release workflow (Phase 2 adds it): GoReleaser builds macOS and Linux (amd64, arm64), publishes a GitHub Release with checksums, and updates `ericliswan/homebrew-tap`. Windows isn't packaged.
-- The agent prepares a release: `main` is green, notes list what users will notice since the last tag, and the summary lists the manual smoke test (§10) for the human. **Push the tag only after the human says "release vX.Y.Z".** Publishing is outward-facing and can't be fully undone.
+- A release is an annotated `vX.Y.Z` tag on `main`. Pushing it runs `.github/workflows/release.yml`: tests, then GoReleaser (`.goreleaser.yaml`) builds macOS and Linux (amd64, arm64), publishes a GitHub Release with checksums, and updates the cask in `ericliswan/homebrew-tap` with the `HOMEBREW_TAP_TOKEN` secret. Prereleases (`v0.2.0-rc1`) skip the tap. Windows isn't packaged.
+- The agent prepares a release: `main` is green, `make snapshot` builds, notes list what users will notice since the last tag, and the summary lists the manual smoke test (§10) for the human. **Push the tag only after the human says "release vX.Y.Z".** Publishing is outward-facing and can't be fully undone.
+- The notes go in the tag message, after a subject line `meow vX.Y.Z`: `git tag -a vX.Y.Z --cleanup=verbatim -F notes.md` (verbatim keeps Markdown `#` lines). GoReleaser puts them above GitHub's list of merged PRs.
 - Never move or delete a published tag; fix a bad release with a new patch release.
 
 ---
