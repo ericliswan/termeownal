@@ -55,7 +55,7 @@ func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n 
 	return func() tea.Msg {
 		a.loads++
 		msgs, more, err := a.b.History(context.Background(), thread, before, n)
-		return HistoryMsg{Thread: thread, Messages: msgs, More: more, Err: err}
+		return HistoryMsg{Thread: thread, Before: before, Messages: msgs, More: more, Err: err}
 	}
 }
 
@@ -478,6 +478,25 @@ func TestConnectedReloadsTheOpenThread(t *testing.T) {
 	}
 	if h.m.threads[first].fetched {
 		t.Error("first thread not marked stale")
+	}
+}
+
+func TestConnectedWhileLoadingOlderReloadsAfter(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	id, _ := h.m.chat.Thread()
+	st := h.m.threads[id]
+	// PgUp's request, still running when the connection comes up.
+	older := h.act.History(id, st.Messages[0].ID, historyPage)
+	st.loading = true
+	loads := h.act.loads
+	h.do(core.StatusChanged{Status: core.Connected})
+	if h.act.loads != loads {
+		t.Fatalf("History calls = %d while loading, want %d", h.act.loads, loads)
+	}
+	h.run(older)
+	if h.act.loads != loads+2 || !st.fetched {
+		t.Errorf("History calls = %d, newest page loaded %v; want %d and true", h.act.loads, st.fetched, loads+2)
 	}
 }
 

@@ -66,7 +66,7 @@ func (a actions) History(thread core.ThreadID, before core.MessageID, n int) tea
 		if err != nil {
 			err = fmt.Errorf("load messages: %w", err)
 		}
-		return ui.HistoryMsg{Thread: thread, Messages: msgs, More: more, Err: err}
+		return ui.HistoryMsg{Thread: thread, Before: before, Messages: msgs, More: more, Err: err}
 	}
 }
 
