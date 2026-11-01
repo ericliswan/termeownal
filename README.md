@@ -52,7 +52,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 ## Features
 
 **Works now**
-- Cookie login (`meow login`) and `meow logout`
+- `meow login` with a username and password (best effort) or cookies from a browser, and `meow logout`
 - A thread list, a chat view and a composer, with Vim-style keys
 - Your threads and their history, with older messages loaded as you scroll up
 - Sending, and live incoming messages, renames and new threads
@@ -61,7 +61,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
 
-**Next:** an optional password login, and prebuilt releases on GitHub and Homebrew.
+**Next:** prebuilt releases on GitHub and Homebrew.
 
 **Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
 
@@ -100,14 +100,19 @@ Prebuilt releases and a Homebrew tap are coming with v0.1.0.
 
 ## Logging in
 
-termeownal logs in with cookies copied from your browser; it never asks for your password.
+Run `./bin/meow login` and choose how to log in.
+
+**Username and password.** Type them, then a code if your account uses two-factor authentication, or approve the login in the Instagram app if it asks. meow saves only the session Instagram returns, never the password. Instagram sometimes wants a check only a browser can do, such as a CAPTCHA; `meow login` then stops and says so, and logging in with cookies works instead.
+
+**Cookies from a browser.** This works even when Instagram asks for checks a terminal can't show.
 
 1. In a Chromium-based browser (Chrome, Edge or Brave), open a private window and log in to instagram.com.
 2. Open DevTools (<kbd>F12</kbd> or <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>I</kbd>; <kbd>Cmd</kbd>+<kbd>Opt</kbd>+<kbd>I</kbd> on a Mac), click the **Network** tab and reload the page.
 3. Right-click the first request (`www.instagram.com`) and choose **Copy → Copy as cURL**. On Windows, pick **Copy as cURL (bash)**, not the `cmd` or PowerShell versions.
-4. Run `./bin/meow login` and paste. Nothing is shown as you paste; press <kbd>Enter</kbd>. A JSON object of cookie names and values works too, or press <kbd>Enter</kbd> on an empty answer to type each cookie.
+4. Run `./bin/meow login`, choose **Cookies from a browser**, and paste. Nothing is shown as you paste; press <kbd>Enter</kbd>. A JSON object of cookie names and values works too, or press <kbd>Enter</kbd> on an empty answer to type each cookie.
 5. Close the private window **without logging out**: logging out ends the session you just copied.
-6. Run `./bin/meow`. The first start loads everything from Instagram; later ones show your cached threads straight away.
+
+Then run `./bin/meow`. The first start loads everything from Instagram; later ones show your cached threads straight away.
 
 Press <kbd>?</kbd> in `meow` for the keys. If the session expires, `meow` asks you to run `meow login` again. `meow logout` deletes the saved session and its key; `meow logout --purge` deletes the message cache too.
 

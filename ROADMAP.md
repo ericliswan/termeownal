@@ -59,7 +59,7 @@ _Plan only — no code yet. Written against `mautrix/meta` `main` as of 27 Oct 2
 ### Later
 - Typing indicators, read receipts, reactions, edits, unsends.
 - Media: placeholders → open in external viewer → inline images on supporting terminals → sending images.
-- Password login and prebuilt releases (Phase 2, next).
+- Prebuilt releases (Phase 2, next).
 - Message requests, desktop notifications.
 
 ### Non-goals
@@ -299,11 +299,13 @@ Input is read from the terminal with no echo; never accept cookies via command-l
 ### 6.2 Password login (Phase 2)
 Upstream supports "Native Web" and "Native Android". Native Web is **not** just password + 2FA: depending on what Instagram asks for, it can go through cookie consent (`ContinueInstagramWebSessionAfterCookieConsent`), captcha (`HasInstagramWebCaptcha` / `SubmitInstagramWebCaptcha` — the captcha is solved by JavaScript in a browser, see `login_web_captcha.js`), an auth-platform challenge (`DoInstagramWebAuthPlatformSteps`), and an account picker (`login_account_manager.go`). Several of these return `*bridgev2.LoginStep`.
 
-Plan:
-- Treat password login as **best effort**. Implement it as a step machine in the adapter that converts each upstream step into an termeownal prompt (text input, code, choice).
-- Mirror `igconnector/login_native.go` step by step.
-- A captcha (or any step termeownal can't show in a terminal) ends the flow with: "Instagram wants a browser check — use `meow login --cookies` instead."
-- Never store the password; only the resulting session.
+How it works (`backend/instagram/password.go`):
+- Password login is **best effort**: a step machine in the adapter that converts each upstream step into a termeownal prompt (text, code, or a numbered choice), mirroring the web half of `igconnector/login_native.go`.
+- `meow login` first asks how to log in: password or cookies.
+- A wait, such as approving the login in the Instagram app, is a step with no questions; `meow login` shows it and waits.
+- A captcha, or any step termeownal can't show in a terminal, ends the flow and says to log in with cookies instead.
+- A challenge or checkpoint after the password ends the flow too: upstream's fallback (its CAA login) isn't ported yet.
+- The password is never stored; only the resulting cookies are, so the first `meow` after it is a cold start.
 
 ### 6.3 What gets saved
 | Item | Where |
@@ -547,7 +549,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 **Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant.
 
 ### Phase 2 — Password login + first release · ~1 week
-- [ ] Password login (Native Web, §6.2) with the 2FA step; `meow login` asks for a password or cookies. Browser-only steps end with "use cookie login instead".
+- [x] Password login (Native Web, §6.2) with the 2FA step; `meow login` asks for a password or cookies. Browser-only steps end with "use cookie login instead".
 - [x] `meow --version`, set at build time.
 - [x] GoReleaser builds for macOS and Linux (amd64 and arm64), published to GitHub Releases by a workflow on tag push.
 - [ ] Homebrew tap: `brew install ericliswan/tap/meow`.
@@ -602,7 +604,8 @@ termeownal/
 │   ├── backend/
 │   │   ├── instagram/       # ONLY importer of mautrix-meta
 │   │   │   ├── client.go    # construction, restore, connect
-│   │   │   ├── login.go     # cookie + (later) password flows
+│   │   │   ├── login.go     # login method, cookie login
+│   │   │   ├── password.go  # password login step machine
 │   │   │   ├── convert.go   # slidetypes → core
 │   │   │   ├── events.go    # ClientEvent/Delta → core.Event
 │   │   │   ├── ids.go       # FBID ↔ IGID mapping
