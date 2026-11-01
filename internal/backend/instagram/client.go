@@ -277,17 +277,23 @@ func (b *Backend) History(ctx context.Context, thread core.ThreadID, before core
 	if before != "" {
 		req.OlderThanMessageID = new(string(before))
 	}
-	resp, err := client.PaginateMessages(ctx, req)
-	if err != nil {
-		return nil, false, fmt.Errorf("load messages: %w", coreError(err))
+	for {
+		resp, err := client.PaginateMessages(ctx, req)
+		if err != nil {
+			return nil, false, fmt.Errorf("load messages: %w", coreError(err))
+		}
+		t := resp.ThreadInfo.AsIGDirectThread
+		if t == nil || t.Messages == nil {
+			return nil, false, nil
+		}
+		msgs, info := convertMessages(t.Messages, thread, b.log), t.Messages.PageInfo
+		if len(msgs) > 0 || !info.HasNextPage || info.EndCursor == "" {
+			return msgs, info.HasNextPage, nil
+		}
+		// The page held only reaction log entries, and an empty page reads as
+		// the end; page past it with the cursor, as upstream's backfill does.
+		req.OlderThanMessageID, req.AfterCursor = nil, &info.EndCursor
 	}
-	t := resp.ThreadInfo.AsIGDirectThread
-	if t == nil || t.Messages == nil {
-		return nil, false, nil
-	}
-	// shortcut: a page of only reaction log entries comes back empty with
-	// more set, so paging stops there; page past them if that shows up.
-	return convertMessages(t.Messages, thread, b.log), t.Messages.PageInfo.HasNextPage, nil
 }
 
 // NewOTID returns a fresh offline threading ID.
