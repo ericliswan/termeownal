@@ -362,9 +362,10 @@ On `ErrPleaseReloadPage`, delete the saved state and fall back to cold start.
 
 ### 7.3 Reconnects and resyncs
 - On `Disconnected`: status "reconnecting"; rely on the library's reconnect, plus our own backoff (1 s → 2 → 4 … max 60 s, with jitter) if it gives up.
-- After reconnect: refresh mailbox, gap-fill the open thread. The mailbox must be stored before live events resume, as in §7.1, or it races the replay.
+- After reconnect: gap-fill the open thread (its newest page; other threads reload theirs when opened). A resync refreshes the mailbox. The mailbox must be stored before live events resume, as in §7.1, or it races the replay.
 - On `ResnapshotRequired`: full mailbox refresh; reset seq ID as upstream does (see `FullReconnect`). The pump stores the new snapshot before it connects again (§7.1).
 - **Periodic refresh:** upstream forces a full reconnect every **20 hours** by default (`force_refresh_interval_seconds: 72000`), and never does full reconnects more often than once an hour (`min_full_reconnect_interval_seconds: 3600`). The saved state also expires after 24 h. termeownal copies these defaults: `force_refresh_interval` is a setting (0 disables), the one-hour floor is a constant.
+- termeownal's refresh drops the saved state and resyncs on the same client, keeping the seq ID (as `FullReconnect(false, true)` does): a warm start, then the replay since the seq ID.
 - Detect system sleep/wake (wall clock jump > 2 min between ticks) → `ForceReconnect()`.
 - Always persist `SeqIDUpdate` / `ReconnectionStateUpdate` (through the pump, in order — §5.4) so restarts resume cheaply.
 
@@ -540,7 +541,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] `backend/instagram`: restore, snapshot, history, send, mark read, live events, ID map.
 - [x] Optimistic send + echo reconciliation + retry.
 - [x] Unread counts; mark read on focus.
-- [ ] Reconnect handling, status bar states, auth-expired banner.
+- [x] Reconnect handling, status bar states, auth-expired banner.
 
 **Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant.
 

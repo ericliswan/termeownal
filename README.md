@@ -56,13 +56,10 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - A thread list, a chat view and a composer, with Vim-style keys
 - Your threads and their history, with older messages loaded as you scroll up
 - Sending, and live incoming messages, renames and new threads
+- Sent messages show right away, with a retry (`r`) if one fails
 - Unread markers; opening a thread marks it read, here and on Instagram (only while the terminal is focused)
 - Instant startup from a local cache
-
-**Still to come in the MVP**
-- Showing a sent message right away, with a retry if it fails (until then it appears once Instagram confirms it)
-- Marking a thread read when you open it
-- Reconnecting on its own after the connection drops (until then, restart `meow`)
+- Reconnecting on its own after the connection drops or the computer sleeps
 
 **Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications, themes, and an optional password login.
 

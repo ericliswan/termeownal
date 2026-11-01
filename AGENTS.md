@@ -196,7 +196,7 @@ Rules:
 - Return an error only for real failures (e.g. cancelled context, or `GetThread` failing for an unknown short ID, so the delta is delivered again). Log unknown events at `debug` and return `nil`.
 - Keep the handler free of disk work. Its only network call is `GetThread`, for an unknown short ID or a thread rename.
 - `ReconnectionStateUpdate` and `AuthError` arrive on the goroutine of whichever call is running (`LoadIndex` sends the new state), so they never wait on the channel: the adapter keeps them in fields.
-- `ResnapshotRequired` → `Connect` returns `nil` after sending `ResyncNeeded`. `AuthError`, or `Disconnected` with an unauthorized error, → `Connect` stops and returns `ErrSessionExpired`, as does every later `Connect`.
+- `ResnapshotRequired`, or a refresh falling due (§6.5), → `Connect` returns `nil` after sending `ResyncNeeded`. `AuthError`, or `Disconnected` with an unauthorized error, → `Connect` stops and returns `ErrSessionExpired`, as does every later `Connect`.
 
 ### 6.5 Resume logic (mirror `igconnector/client.go` → `connectWithRetry`)
 1. Show cached threads from SQLite immediately.
@@ -204,12 +204,12 @@ Rules:
 3. **Fast:** saved state, `LoadState` succeeds, `HasSeqID()`.
    **Warm:** seq ID but state unusable (`ErrCachedStateTooOld` after 24 h) → `ReloadIndex`, save `DumpState()`.
    **Cold:** no seq ID → `LoadIndex`, save state.
-4. Store a fresh mailbox, **then** `Connect`: the pump stores `Backend.Snapshot` (`LoadIndex`'s mailbox on a cold start, otherwise `GetMailbox`) before it asks for a connection, so live events always apply on top of it. Don't refresh the mailbox in the background after `Connected`: it would race the replay. After `Connected`, gap-fill the open thread.
+4. Store a fresh mailbox, **then** `Connect`: the pump stores `Backend.Snapshot` (`LoadIndex`'s mailbox on a cold start, otherwise `GetMailbox`) before it asks for a connection, so live events always apply on top of it. Don't refresh the mailbox in the background after `Connected`: it would race the replay. After `Connected`, gap-fill the open thread (the UI reloads its newest page and marks the other threads' stale).
 5. `ErrPleaseReloadPage` → delete saved state, cold start.
 
 `Restore` does steps 2 and the `LoadState` half of 3 without touching the network; `Snapshot` makes the calls. A cold start's seq ID waits until `Connect`, since `Snapshot` never sends events.
-6. Force a full reconnect every 20 h (config `force_refresh_interval`, 0 disables), never more than once an hour. `ForceReconnect()` on detected sleep/wake (wall-clock jump > 2 min).
-7. Reconnect backoff when the library gives up: 1 s doubling to 60 s, with jitter.
+6. Force a full reconnect every 20 h (config `force_refresh_interval`, 0 disables), never more than once an hour. Like upstream's `FullReconnect(false, true)`, it drops the saved state and keeps the seq ID: `Connect` cancels the client's `Connect`, sends `ResyncNeeded` and returns `nil`, and the next `Snapshot` is a warm start on the same client. A cancelled `Client.Connect` can be called again; `Disconnect` can't. `ForceReconnect()` on detected sleep/wake (wall-clock jump > 2 min past a 30 s tick, read with `Round(0)`: the monotonic clock stops while a Mac sleeps).
+7. Reconnect backoff when the library gives up: 1 s doubling to 60 s, with jitter. The pump retries a failed `Snapshot` or `Connect` this way, except on the auth errors of §6.6, and starts the backoff again after a connection that lasted over a minute.
 
 ### 6.6 Errors
 | Error | Handling |
