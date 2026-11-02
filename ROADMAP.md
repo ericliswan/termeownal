@@ -546,7 +546,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] Unread counts; mark read on focus.
 - [x] Reconnect handling, status bar states, auth-expired banner.
 
-**Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant.
+**Done when:** you use termeownal for a full day of normal DMs without opening the app, and restart is instant. *(Met 3 Nov 2026.)*
 
 ### Phase 2 — Password login + first release · ~1 week
 - [x] Password login (Native Web, §6.2) with the 2FA step; `meow login` asks for a password or cookies. Browser-only steps end with "use cookie login instead".
