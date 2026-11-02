@@ -20,12 +20,14 @@ Set BorderRadius 12
 Set TypingSpeed 70ms
 Set Theme { "name": "termeownal", "background": "#0E0E0E", "foreground": "#E5E5E5", "cursor": "#F5F5F5", "selection": "#333333", "black": "#0E0E0E", "red": "#F87171", "green": "#4ADE80", "yellow": "#FBBF24", "blue": "#93C5FD", "magenta": "#C084FC", "cyan": "#67E8F9", "white": "#E5E5E5", "brightBlack": "#6B7280", "brightRed": "#FCA5A5", "brightGreen": "#86EFAC", "brightYellow": "#FDE68A", "brightBlue": "#BFDBFE", "brightMagenta": "#D8B4FE", "brightCyan": "#A5F3FC", "brightWhite": "#FFFFFF" }
 
+# Puts the fresh build on PATH, so the demo types plain `meow`.
 Hide
+Type 'export PATH="$PWD/bin:$PATH"' Enter
 Type "clear" Enter
 Show
 
 # Start against canned chats.
-Type "./bin/meow --backend=fake"
+Type "meow --backend=fake"
 Sleep 600ms
 Enter
 Sleep 2s
