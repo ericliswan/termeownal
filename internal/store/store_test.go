@@ -203,6 +203,33 @@ func TestMigrateFromEveryVersion(t *testing.T) {
 	}
 }
 
+func TestMigration2DropsMessageWithoutID(t *testing.T) {
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "cache.db")
+	db, err := sql.Open("sqlite", path)
+	must(t, err)
+	must(t, migrate(ctx, db, 1))
+	_, err = db.ExecContext(ctx, `INSERT INTO messages VALUES ('', 1, 2, 3, 'TEXT', 'x', '', 0), ('mid.$a', 1, 2, 3, 'TEXT', 'x', '', 0)`)
+	must(t, err)
+	must(t, db.Close())
+
+	s, err := Open(ctx, path)
+	must(t, err)
+	defer func() { _ = s.Close() }()
+	var ids []string
+	rows, err := s.db.QueryContext(ctx, "SELECT id FROM messages")
+	must(t, err)
+	for rows.Next() {
+		var id string
+		must(t, rows.Scan(&id))
+		ids = append(ids, id)
+	}
+	must(t, rows.Err())
+	if !slices.Equal(ids, []string{"mid.$a"}) {
+		t.Fatalf("ids = %q", ids)
+	}
+}
+
 func TestOpenRefusesNewerSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
 	db, err := sql.Open("sqlite", path)

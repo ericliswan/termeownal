@@ -81,6 +81,8 @@ var migrations = []string{
 	);
 	CREATE INDEX messages_by_thread ON messages (thread_key, ts_ms, id);
 	CREATE INDEX messages_by_otid ON messages (otid);`,
+	// 2: drop messages cached without an ID (read from an empty message_id); history loads them again.
+	`DELETE FROM messages WHERE id = '';`,
 }
 
 // tables lists every table, for emptying the cache when the account changes.
