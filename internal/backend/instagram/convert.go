@@ -108,9 +108,15 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 	if m == nil || m.ContentType == contentReactionLog {
 		return core.Message{}, false
 	}
+	// Upstream keys messages by id; message_id is empty in some responses.
+	id := cmp.Or(m.ID, m.MessageID)
+	if id == "" {
+		log.Debug().Str("content_type", m.ContentType).Msg("message without an ID skipped")
+		return core.Message{}, false
+	}
 	log.Debug().Str("content_type", m.ContentType).Msg("message")
 	return core.Message{
-		ID:          core.MessageID(m.MessageID),
+		ID:          core.MessageID(id),
 		Thread:      key,
 		Sender:      core.UserID(m.SenderFBID),
 		At:          m.TimestampMS.Time,
