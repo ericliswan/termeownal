@@ -103,8 +103,17 @@ func TestConvertThreadNamedGroup(t *testing.T) {
 	}
 }
 
-func TestConvertMessageSkipsReactionLogs(t *testing.T) {
-	for _, m := range []*slidetypes.Message{nil, {MessageID: "mid.$x", ContentType: contentReactionLog}} {
+// Upstream keys messages by id; message_id is sometimes empty.
+func TestConvertMessageID(t *testing.T) {
+	for _, m := range []*slidetypes.Message{{ID: "mid.$x"}, {ID: "mid.$x", MessageID: "mid.$x"}, {MessageID: "mid.$x"}} {
+		if got, ok := convertMessage(m, 1, zerolog.Nop()); !ok || got.ID != "mid.$x" {
+			t.Errorf("%+v: ID = %q, ok = %v", m, got.ID, ok)
+		}
+	}
+}
+
+func TestConvertMessageSkips(t *testing.T) {
+	for _, m := range []*slidetypes.Message{nil, {ContentType: "TEXT"}, {ID: "mid.$x", ContentType: contentReactionLog}} {
 		if _, ok := convertMessage(m, 1, zerolog.Nop()); ok {
 			t.Errorf("%+v converted", m)
 		}
