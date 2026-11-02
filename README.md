@@ -15,7 +15,7 @@
 <p align="center">
   <a href="#preview">Preview</a> ·
   <a href="#features">Features</a> ·
-  <a href="#building">Building</a> ·
+  <a href="#installing">Installing</a> ·
   <a href="#logging-in">Logging in</a> ·
   <a href="#configuration">Configuration</a> ·
   <a href="#contributing">Contributing</a> ·
@@ -61,13 +61,23 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
 
-**Next:** prebuilt releases on GitHub and Homebrew.
+**Next:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
 
-**Later:** replies, reactions, edits and unsends, typing indicators, read receipts, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
+## Installing
+
+On macOS or Linux, with [Homebrew](https://brew.sh):
+
+```sh
+brew install ericliswan/tap/meow
+```
+
+Or download the archive for your system from [Releases](https://github.com/ericliswan/termeownal/releases), unpack it and put `meow` on your `PATH`. On macOS, a downloaded binary isn't signed, so remove the quarantine flag first: `xattr -d com.apple.quarantine meow`. There are builds for macOS and Linux on amd64 and arm64; on Windows, build it yourself.
+
+Try the UI without an account, with canned chats and no network: `meow --backend=fake`.
 
 ## Building
 
-You need [Go](https://go.dev/dl/) 1.26 or newer and Git. termeownal is pure Go, so you don't need a C compiler. First, get the code:
+To build from source instead, you need [Go](https://go.dev/dl/) 1.26 or newer and Git. termeownal is pure Go, so you don't need a C compiler. First, get the code:
 
 ```sh
 git clone https://github.com/ericliswan/termeownal.git
@@ -92,11 +102,9 @@ go build -o bin\meow.exe .\cmd\meow
 .\bin\meow.exe --backend=fake
 ```
 
-The rest of this README writes `./bin/meow`; on Windows, type `.\bin\meow.exe` instead.
+The rest of this README writes `./bin/meow`; type `meow` if you installed it, or `.\bin\meow.exe` on Windows.
 
 termeownal has been used with a real account only on macOS so far. CI runs the tests on Linux and checks that it builds for Windows. If something doesn't work on your system, please [open an issue](https://github.com/ericliswan/termeownal/issues).
-
-Prebuilt releases and a Homebrew tap are coming with v0.1.0.
 
 ## Logging in
 
