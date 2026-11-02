@@ -12,7 +12,7 @@ Instructions for coding agents working in this repository. Read this whole file 
 
 It talks to Instagram through **`instameow`** (`go.mau.fi/mautrix-meta/pkg/instameow`), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. termeownal does **not** run the bridge, Matrix, or any server.
 
-**Status:** Phase 0 (spike) done, findings in `docs/ids.md`. Phase 1 (MVP) done. Work proceeds phase by phase (§12). Phase 2: password login is done; next, the first release.
+**Status:** Phase 0 (spike) done, findings in `docs/ids.md`. Phase 1 (MVP) done. Work proceeds phase by phase (§12). Phase 2 (password login, v0.1.0) done.
 
 ---
 
