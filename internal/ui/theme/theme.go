@@ -17,17 +17,23 @@
 // Package theme holds the colours and styles shared by the UI.
 package theme
 
-import "charm.land/lipgloss/v2"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 // Colours. Bubble Tea downgrades them to what the terminal supports and
 // drops them entirely under NO_COLOR, so nothing may depend on colour alone.
 // The palette is greyscale; statuses differ by glyph and text, not hue.
+// Highlights use the terminal's own text colour, so they read on light and
+// dark backgrounds alike; a fixed near-white vanishes on a light one.
 var (
-	Accent = lipgloss.Color("#F5F5F5")
-	Subtle = lipgloss.Color("#737373")
-	Error  = lipgloss.Color("#F5F5F5")
-	OK     = lipgloss.Color("#F5F5F5")
-	Warn   = lipgloss.Color("#A3A3A3")
+	Accent color.Color = lipgloss.NoColor{}
+	Subtle             = lipgloss.Color("#737373")
+	Error  color.Color = lipgloss.NoColor{}
+	OK     color.Color = lipgloss.NoColor{}
+	Warn               = lipgloss.Color("#A3A3A3")
 )
 
 // Styles shared across components.
@@ -40,5 +46,5 @@ var (
 	Pane        = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(Subtle)
 	FocusedPane = Pane.BorderForeground(Accent).BorderStyle(lipgloss.ThickBorder())
 
-	Banner = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#000000")).Background(Error)
+	Banner = lipgloss.NewStyle().Bold(true).Reverse(true)
 )
