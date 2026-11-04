@@ -23,6 +23,9 @@ import (
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+
+	"termeownal/internal/ui/theme"
 )
 
 // SubmitMsg carries the text the user sent.
@@ -44,6 +47,17 @@ func New() Model {
 	// A steady cursor: a blinking one redraws the screen twice a second.
 	st := ta.Styles()
 	st.Cursor.Blink = false
+	// The defaults assume a dark terminal (a black line behind the text, light
+	// grey prompt), so typing is invisible on a light one. Use the terminal's
+	// own colours, and a grey that reads on both for the rest.
+	st.Cursor.Color = nil
+	for _, s := range []*textarea.StyleState{&st.Focused, &st.Blurred} {
+		s.CursorLine = lipgloss.NewStyle()
+		s.EndOfBuffer = lipgloss.NewStyle()
+		s.Prompt = theme.Dim
+	}
+	st.Blurred.Text = theme.Dim
+	st.Blurred.CursorLine = theme.Dim
 	ta.SetStyles(st)
 	return Model{ta: ta}
 }
