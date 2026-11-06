@@ -35,10 +35,11 @@ import (
 // the backend b, restored from session s, then closes b. save, if not nil,
 // saves the session as it changes: the seq ID once the events before it are
 // stored, and the login data on SessionChanged and at exit.
-func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger) error {
+// sendTyping is the send_typing setting.
+func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger, sendTyping bool) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st}, time.Now), tea.WithContext(ctx))
+	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st, log: log, sendTyping: sendTyping}, time.Now), tea.WithContext(ctx))
 
 	p := newPump(b, st, prog, log)
 	p.session, p.save = s, save
@@ -55,9 +56,11 @@ func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, s
 
 // actions runs UI requests against the cache and the backend.
 type actions struct {
-	ctx context.Context
-	b   core.Backend
-	st  *store.Store
+	ctx        context.Context
+	b          core.Backend
+	st         *store.Store
+	log        zerolog.Logger
+	sendTyping bool
 }
 
 func (a actions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -115,6 +118,28 @@ func (a actions) Send(m core.Message) tea.Cmd {
 			err = fmt.Errorf("send: %w", err)
 		}
 		return ui.SentMsg{Message: m, Err: err}
+	}
+}
+
+// typingTimeout bounds a Typing call; upstream waits up to 5 s for its socket.
+const typingTimeout = 10 * time.Second
+
+// Typing tells the thread's members whether the user is typing, unless
+// send_typing is off. Failures are only logged: typing is a hint.
+// shortcut: each call runs in its own goroutine, so a start can overtake a
+// stop and show the user typing until the other side's timeout; serialise
+// the calls if that's noticed.
+func (a actions) Typing(thread core.ThreadID, active bool) tea.Cmd {
+	if !a.sendTyping {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(a.ctx, typingTimeout)
+		defer cancel()
+		if err := a.b.Typing(ctx, thread, active); err != nil {
+			a.log.Debug().Err(err).Msg("typing not sent")
+		}
+		return nil
 	}
 }
 

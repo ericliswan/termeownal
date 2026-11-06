@@ -143,7 +143,7 @@ func run() error {
 			return err
 		}
 		defer func() { _ = st.Close() }()
-		return app.Run(ctx, b, st, core.Session{}, nil, log)
+		return app.Run(ctx, b, st, core.Session{}, nil, log, cfg.SendTyping)
 	case "instagram":
 		s, err := f.Load()
 		switch {
@@ -165,7 +165,7 @@ func run() error {
 			return err
 		}
 		defer func() { _ = st.Close() }()
-		return app.Run(ctx, b, st, s, f.Save, log)
+		return app.Run(ctx, b, st, s, f.Save, log, cfg.SendTyping)
 	default:
 		return fmt.Errorf("unknown backend %q", *backend)
 	}
@@ -178,7 +178,7 @@ func newFake(ctx context.Context) (core.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := fake.New(fake.Options{IncomingEvery: 15 * time.Second, EchoDelay: 300 * time.Millisecond, ReadAfter: 2 * time.Second})
+	b := fake.New(fake.Options{IncomingEvery: 15 * time.Second, EchoDelay: 300 * time.Millisecond, ReadAfter: 2 * time.Second, TypingFor: 2 * time.Second})
 	if err := b.Restore(ctx, core.Session{Auth: step.Result.Auth}); err != nil {
 		return nil, err
 	}

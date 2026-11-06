@@ -152,3 +152,15 @@ func TestMarkReadClearsCachedUnread(t *testing.T) {
 		t.Fatalf("cached thread %d still unread", upTo.Thread)
 	}
 }
+
+func TestTypingFollowsTheSetting(t *testing.T) {
+	b := restoredFake(t)
+	if cmd := (actions{ctx: t.Context(), b: b}).Typing(1, true); cmd != nil {
+		t.Fatal("typing sent with send_typing off")
+	}
+	_, threads, _ := b.Snapshot(t.Context())
+	cmd := actions{ctx: t.Context(), b: b, sendTyping: true}.Typing(threads[0].ID, true)
+	if cmd == nil || cmd() != nil {
+		t.Fatal("typing not sent with send_typing on")
+	}
+}
