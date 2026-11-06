@@ -60,6 +60,7 @@ type upstream interface {
 	SendMessage(context.Context, *slidetypes.SendTextRequest) (*slidetypes.SendTextResponse, error)
 	MarkRead(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadResponse, error)
 	MarkReadValidation(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadValidationResponse, error)
+	SetTyping(context.Context, string, bool) error
 	Connect(context.Context)
 	ForceReconnect()
 	Disconnect()
@@ -164,8 +165,8 @@ func (b *Backend) build(c *cookies.Cookies, seq int64, at time.Time) upstream {
 		SeqID:        seq,
 		SeqIDTS:      at,
 		EventHandler: b.handle,
-		// Typing arrives in Phase 3.
-		DisableTyping: true,
+		// DisableTyping would also stop incoming typing notifications, so
+		// the user's send_typing setting is applied in app instead.
 	})
 }
 
@@ -236,7 +237,7 @@ func (b *Backend) snapshot(ctx context.Context) (core.User, []core.Thread, error
 		if t == nil {
 			continue
 		}
-		b.ids.add(core.ThreadID(t.ThreadKey), idsOf(t))
+		b.learn(t)
 		if me.Username == "" && t.Viewer != nil {
 			me.Username, me.Name = t.Viewer.Username, t.Viewer.FullName
 		}
@@ -356,6 +357,23 @@ func (b *Backend) MarkRead(ctx context.Context, upTo core.Message) error {
 	return nil
 }
 
+// Typing tells thread's members whether the user is typing. It needs the
+// live connection.
+func (b *Backend) Typing(ctx context.Context, thread core.ThreadID, active bool) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	ids, err := b.idsFor(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	if err := client.SetTyping(ctx, ids.short, active); err != nil {
+		return fmt.Errorf("typing: %w", coreError(err))
+	}
+	return nil
+}
+
 // idsFor returns a thread's IDs, looking them up for a thread not seen since
 // the start (docs/ids.md): a 1:1's key is the other user's FBID, a group's
 // is its short ID.
@@ -389,9 +407,20 @@ func (b *Backend) fetchThread(ctx context.Context, client upstream, short string
 	}
 	t := resp.ThreadInfo.AsIGDirectThread
 	if t != nil {
-		b.ids.add(core.ThreadID(t.ThreadKey), idsOf(t))
+		b.learn(t)
 	}
 	return t, nil
+}
+
+// learn records a thread's IDs and its members' FBIDs by IGID, which
+// typing notifications need.
+func (b *Backend) learn(t *slidetypes.ThreadInfo) {
+	b.ids.add(core.ThreadID(t.ThreadKey), idsOf(t))
+	for _, u := range t.Users {
+		if u != nil {
+			b.ids.addUser(u.ID, core.UserID(u.InteropMessagingUserFBID))
+		}
+	}
 }
 
 // Connect runs the live connection; upstream reconnects on its own. It

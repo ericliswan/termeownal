@@ -186,6 +186,10 @@ func (f *fakeUpstream) MarkReadValidation(_ context.Context, req *slidetypes.Mar
 	return &slidetypes.MarkReadValidationResponse{}, f.call("MarkReadValidation", req)
 }
 
+func (f *fakeUpstream) SetTyping(_ context.Context, short string, typing bool) error {
+	return f.call(fmt.Sprint("SetTyping ", short, " ", typing), nil)
+}
+
 func (f *fakeUpstream) Connect(ctx context.Context) {
 	_ = f.call("Connect", nil)
 	if f.connect != nil {
@@ -756,6 +760,37 @@ func TestSendAndMarkRead(t *testing.T) {
 	f.fail["SendMessage"] = httpclient.ErrRateLimited
 	if err := b.Send(t.Context(), thread, "placeholder sent", "7000000000000000003", ""); !errors.Is(err, core.ErrRateLimited) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestTyping(t *testing.T) {
+	f := newFakeUpstream(t)
+	b := newTestBackend(t, f, testSession(testState, 400))
+	snapshot(t, b, f)
+	group := core.ThreadID(3400000000000002)
+	bob := core.UserID(10000000000000002)
+
+	for _, tc := range []struct {
+		name string
+		ev   *slidetypes.TypingNotification
+		want []core.Event
+	}{
+		{name: "1:1 start", ev: &slidetypes.TypingNotification{ThreadID: "340282366841710300949128000000000000001", SenderID: 9001, ActivityStatus: 1},
+			want: []core.Event{core.Typing{Thread: core.ThreadID(alice.ID), User: alice.ID, Active: true}}},
+		{name: "group stop", ev: &slidetypes.TypingNotification{ThreadID: "340282366841710300949128000000000000002", SenderID: 9002},
+			want: []core.Event{core.Typing{Thread: group, User: bob}}},
+		{name: "unknown thread", ev: &slidetypes.TypingNotification{ThreadID: "340282366841710300949128000000000000009", SenderID: 9001, ActivityStatus: 1}},
+		{name: "the viewer on another device", ev: &slidetypes.TypingNotification{ThreadID: "340282366841710300949128000000000000001", SenderID: 9000, ActivityStatus: 1}},
+	} {
+		handle(t, b, tc.ev)
+		t.Run(tc.name, func(t *testing.T) { expect(t, b, tc.want...) })
+	}
+
+	if err := b.Typing(t.Context(), core.ThreadID(alice.ID), true); err != nil {
+		t.Fatal(err)
+	}
+	if calls, _ := f.takeCalls(); !slices.Equal(calls, []string{"SetTyping 3400000000000001 true"}) {
+		t.Fatalf("calls = %q", calls)
 	}
 }
 
