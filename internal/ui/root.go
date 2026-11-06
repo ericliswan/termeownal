@@ -292,6 +292,8 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	}
 	_, open := m.chat.Thread()
 	switch {
+	case m.focus == paneComposer && m.composer.Suggesting() && (s == "tab" || s == "esc"):
+		// Picks or closes an emoji suggestion; handled below.
 	case s == "tab" || s == "shift+tab":
 		order := []pane{paneThreads, paneChat}
 		if open {
@@ -335,7 +337,11 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
+		h := m.composer.Height()
 		m.composer, cmd = m.composer.Update(k)
+		if m.composer.Height() != h {
+			m.layout()
+		}
 	}
 	return m, cmd
 }
@@ -345,6 +351,9 @@ func (m *Model) setFocus(p pane) tea.Cmd {
 	m.chat.SetFocused(p == paneChat)
 	if p == paneComposer {
 		return m.composer.Focus()
+	}
+	if m.composer.Suggesting() {
+		defer m.layout()
 	}
 	m.composer.Blur()
 	return nil

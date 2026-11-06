@@ -11,17 +11,17 @@
 ┃    James, Ben,┃  j k ↑ ↓           move; select a message                        ┃               │
 ┃    ok         ┃  Enter             open thread / send                            ┃               │
 ┃               ┃  Alt+Enter         new line in message                           ┃               │
-┃  ● Aisha      ┃  g / G             top / bottom                                  ┃               │
-┃    😭😭😭     ┃  PgUp              page up; at the top, load older               ┃               │
-┃               ┃  r                 reply to the message, or resend if it failed  ┃               │
-┃    Dan        ┃  Esc               cancel the reply, or back to the thread list  ┃               │
-┃    You: brb   ┃  ?                 this help                                     ┃               │
-┃               ┃  Ctrl+C            quit                                          ┃               │
-┃    Film Societ┃                                                                  ┃               │
-┃    ok         ┃  Esc or ? to close                                               ┃               │
-┃               ┃                                                                  ┃               │
-┃    ゆき       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛               │
-┃    You: slides are here https…┃╰─────────────────────────────────────────────────────────────────╯
+┃  ● Aisha      ┃  :heart:           emoji; after :he, Tab or Enter picks          ┃               │
+┃    😭😭😭     ┃  g / G             top / bottom                                  ┃               │
+┃               ┃  PgUp              page up; at the top, load older               ┃               │
+┃    Dan        ┃  r                 reply to the message, or resend if it failed  ┃               │
+┃    You: brb   ┃  Esc               cancel the reply, or back to the thread list  ┃               │
+┃               ┃  ?                 this help                                     ┃               │
+┃    Film Societ┃  Ctrl+C            quit                                          ┃               │
+┃    ok         ┃                                                                  ┃               │
+┃               ┃  Esc or ? to close                                               ┃               │
+┃    ゆき       ┃                                                                  ┃               │
+┃    You: slides┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛───────────────╯
 ┃                               ┃╭─────────────────────────────────────────────────────────────────╮
 ┃    Lucas                   Sun┃│> Message…                                                       │
 ┃    You: hey!                  ┃│>                                                                │

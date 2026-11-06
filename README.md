@@ -59,6 +59,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Sent messages show right away, with a retry (`r`) if one fails
 - Replies: select a message with `j`/`k` and press `r`; quoted replies show above the message
 - "Seen" under your newest message once the other side has read it
+- Emoji by name, as in Discord: type `:heart:` for ❤️, or pick from the matches shown after `:he`
 - Unread markers; opening a thread marks it read, here and on Instagram (only while the terminal is focused)
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
@@ -186,7 +187,7 @@ By contributing, you agree that your work is licensed under the [AGPL-3.0](LICEN
 
 ## Credits
 
-termeownal is built on [mautrix/meta](https://github.com/mautrix/meta) by Tulir Asokan and its contributors. The terminal UI uses [Bubble Tea](https://github.com/charmbracelet/bubbletea).
+termeownal is built on [mautrix/meta](https://github.com/mautrix/meta) by Tulir Asokan and its contributors. The terminal UI uses [Bubble Tea](https://github.com/charmbracelet/bubbletea). Emoji names come from GitHub's [gemoji](https://github.com/github/gemoji) (MIT; notice in `internal/ui/emoji/table.go`).
 
 ## License
 
