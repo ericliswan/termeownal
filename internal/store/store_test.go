@@ -203,30 +203,60 @@ func TestMigrateFromEveryVersion(t *testing.T) {
 	}
 }
 
-func TestMigration2DropsMessageWithoutID(t *testing.T) {
+// migrateTo returns a database at schema version v after running setup at
+// version v-1.
+func migrateTo(t *testing.T, v int, setup string) *sql.DB {
+	t.Helper()
 	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "cache.db")
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "cache.db"))
 	must(t, err)
-	must(t, migrate(ctx, db, 1))
-	_, err = db.ExecContext(ctx, `INSERT INTO messages VALUES ('', 1, 2, 3, 'TEXT', 'x', '', 0), ('mid.$a', 1, 2, 3, 'TEXT', 'x', '', 0)`)
+	t.Cleanup(func() { _ = db.Close() })
+	must(t, migrate(ctx, db, v-1))
+	_, err = db.ExecContext(ctx, setup)
 	must(t, err)
-	must(t, db.Close())
+	must(t, migrate(ctx, db, v))
+	return db
+}
 
-	s, err := Open(ctx, path)
+// column returns one column of a query's rows.
+func column[T any](t *testing.T, db *sql.DB, query string) []T {
+	t.Helper()
+	rows, err := db.QueryContext(t.Context(), query)
 	must(t, err)
-	defer func() { _ = s.Close() }()
-	var ids []string
-	rows, err := s.db.QueryContext(ctx, "SELECT id FROM messages")
-	must(t, err)
+	defer func() { _ = rows.Close() }()
+	var out []T
 	for rows.Next() {
-		var id string
-		must(t, rows.Scan(&id))
-		ids = append(ids, id)
+		var v T
+		must(t, rows.Scan(&v))
+		out = append(out, v)
 	}
 	must(t, rows.Err())
-	if !slices.Equal(ids, []string{"mid.$a"}) {
+	return out
+}
+
+func TestMigration2DropsMessageWithoutID(t *testing.T) {
+	db := migrateTo(t, 2, `INSERT INTO messages VALUES ('', 1, 2, 3, 'TEXT', 'x', '', 0), ('mid.$a', 1, 2, 3, 'TEXT', 'x', '', 0)`)
+	if ids := column[string](t, db, "SELECT id FROM messages"); !slices.Equal(ids, []string{"mid.$a"}) {
 		t.Fatalf("ids = %q", ids)
+	}
+}
+
+func TestMigration3KeepsOnlyLocalMessages(t *testing.T) {
+	db := migrateTo(t, 3, `
+		INSERT INTO threads VALUES (2, 'Ana', 0, 3, 0, 1);
+		INSERT INTO thread_members VALUES (2, 2);
+		INSERT INTO messages VALUES
+			('mid.$sent', 2, 1, 3, 'TEXT', 'x', '', 0),
+			('local:o1', 2, 1, 4, 'TEXT', 'x', 'o1', 1),
+			('local:o2', 2, 1, 5, 'TEXT', 'x', 'o2', 2)`)
+	if ids := column[string](t, db, "SELECT id FROM messages ORDER BY id"); !slices.Equal(ids, []string{"local:o1", "local:o2"}) {
+		t.Errorf("ids = %q, want the unsent local copies", ids)
+	}
+	if done := column[bool](t, db, "SELECT history_complete FROM threads"); !slices.Equal(done, []bool{false}) {
+		t.Errorf("history_complete = %v, want false so history loads again", done)
+	}
+	if read := column[int64](t, db, "SELECT read_up_to_ms FROM thread_members"); !slices.Equal(read, []int64{0}) {
+		t.Errorf("read_up_to_ms = %v", read)
 	}
 }
 
@@ -285,13 +315,16 @@ func TestOpenIsPrivateAndDurable(t *testing.T) {
 func TestSnapshotRoundTrip(t *testing.T) {
 	s := newStore(t)
 	ctx := t.Context()
+	reply := msg("a3", dm, anaID, 10)
+	reply.ReplyTo = core.Quote{ID: "a2", Sender: meID, Text: "text a2", ContentType: "TEXT"}
 	must(t, s.PutThreads(ctx, []core.Thread{
 		{
 			ID: dm, Title: "Ana", Members: []core.User{ana}, LastActivity: at(10), Unread: true,
-			Messages: []core.Message{msg("a1", dm, anaID, 1), msg("a2", dm, meID, 5), msg("a3", dm, anaID, 10)},
+			Messages: []core.Message{msg("a1", dm, anaID, 1), msg("a2", dm, meID, 5), reply},
 		},
 		{
 			ID: group, Title: "Group", IsGroup: true, Members: []core.User{ben, ana}, LastActivity: at(20),
+			ReadUpTo: map[core.UserID]time.Time{benID: at(20), anaID: at(15)},
 			Messages: []core.Message{msg("g1", group, benID, 20)},
 		},
 	}))
@@ -301,15 +334,49 @@ func TestSnapshotRoundTrip(t *testing.T) {
 	want := []core.Thread{
 		{
 			ID: group, Title: "Group", IsGroup: true, Members: []core.User{ben, ana}, LastActivity: at(20),
+			ReadUpTo: map[core.UserID]time.Time{benID: at(20), anaID: at(15)},
 			Messages: []core.Message{msg("g1", group, benID, 20)},
 		},
 		{
 			ID: dm, Title: "Ana", Members: []core.User{ana}, LastActivity: at(10), Unread: true,
-			Messages: []core.Message{msg("a2", dm, meID, 5), msg("a3", dm, anaID, 10)},
+			Messages: []core.Message{msg("a2", dm, meID, 5), reply},
 		},
 	}
 	if gotMe != me || !reflect.DeepEqual(got, want) {
 		t.Errorf("Snapshot =\n%v\n%+v\nwant\n%v\n%+v", gotMe, got, me, want)
+	}
+}
+
+// Receipts arrive late, twice, and before or after a snapshot of the thread:
+// each member's read position only moves forward.
+func TestReadReceipts(t *testing.T) {
+	s := newStore(t)
+	ctx := t.Context()
+	snapshot := func(read map[core.UserID]time.Time) func() error {
+		return func() error {
+			return s.PutThreads(ctx, []core.Thread{{ID: group, Title: "G", IsGroup: true, Members: []core.User{ben, ana}, LastActivity: at(9), ReadUpTo: read}})
+		}
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		want map[core.UserID]time.Time
+	}{
+		{"snapshot", snapshot(map[core.UserID]time.Time{benID: at(2)}), map[core.UserID]time.Time{benID: at(2)}},
+		{"receipt", func() error { return s.PutReadReceipt(ctx, group, anaID, at(5)) }, map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"same again", func() error { return s.PutReadReceipt(ctx, group, anaID, at(5)) }, map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"older, late", func() error { return s.PutReadReceipt(ctx, group, anaID, at(3)) }, map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"not a member", func() error { return s.PutReadReceipt(ctx, group, 77, at(6)) }, map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"older snapshot", snapshot(map[core.UserID]time.Time{benID: at(1), anaID: at(4)}), map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"snapshot without receipts", snapshot(nil), map[core.UserID]time.Time{benID: at(2), anaID: at(5)}},
+		{"newer snapshot", snapshot(map[core.UserID]time.Time{benID: at(8)}), map[core.UserID]time.Time{benID: at(8), anaID: at(5)}},
+		{"other thread", func() error { return s.PutReadReceipt(ctx, dm, benID, at(9)) }, map[core.UserID]time.Time{benID: at(8), anaID: at(5)}},
+	}
+	for _, step := range steps {
+		must(t, step.do())
+		if got := thread(t, s, group).ReadUpTo; !reflect.DeepEqual(got, step.want) {
+			t.Errorf("after %s: ReadUpTo = %v, want %v", step.name, got, step.want)
+		}
 	}
 }
 
@@ -352,6 +419,8 @@ func TestReplayChangesNothing(t *testing.T) {
 		func() error { return s.FailUnsent(ctx) },
 		func() error { return s.AddMessage(ctx, echo("a5", "o1", 5)) },
 		func() error { return s.MarkRead(ctx, dm, at(4)) },
+		func() error { return s.PutReadReceipt(ctx, dm, anaID, at(4)) },
+		func() error { return s.PutReadReceipt(ctx, dm, anaID, at(2)) },
 		func() error {
 			return s.PutHistory(ctx, dm, "a1", []core.Message{msg("a0", dm, anaID, -2), msg("a0b", dm, meID, -1)}, false)
 		},

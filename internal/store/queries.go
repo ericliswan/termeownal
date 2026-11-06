@@ -34,7 +34,8 @@ import (
 // matches all of them.
 const notMe = "sender_fbid IS NOT (SELECT fbid FROM account)"
 
-const messageCols = "id, thread_key, sender_fbid, ts_ms, content_type, text, otid, send_state"
+const messageCols = "id, thread_key, sender_fbid, ts_ms, content_type, text, otid, send_state, " +
+	"reply_to_id, reply_sender_fbid, reply_text, reply_content_type"
 
 // Snapshot returns the cached account (the zero User if none) and every
 // cached thread, most recently active first, each with its newest n messages,
@@ -91,7 +92,7 @@ func readThreads(ctx context.Context, tx *sql.Tx) ([]core.Thread, error) {
 
 	// rowid order is the order PutThreads inserted the members in.
 	rows, err = tx.QueryContext(ctx, `
-		SELECT m.thread_key, u.fbid, u.username, u.full_name
+		SELECT m.thread_key, u.fbid, u.username, u.full_name, m.read_up_to_ms
 		FROM thread_members m JOIN users u ON u.fbid = m.user_fbid
 		ORDER BY m.thread_key, m.rowid`)
 	if err != nil {
@@ -101,11 +102,21 @@ func readThreads(ctx context.Context, tx *sql.Tx) ([]core.Thread, error) {
 	for rows.Next() {
 		var key core.ThreadID
 		var u core.User
-		if err := rows.Scan(&key, &u.ID, &u.Username, &u.Name); err != nil {
+		var readMS int64
+		if err := rows.Scan(&key, &u.ID, &u.Username, &u.Name, &readMS); err != nil {
 			return nil, err
 		}
-		if i, ok := index[key]; ok {
-			threads[i].Members = append(threads[i].Members, u)
+		i, ok := index[key]
+		if !ok {
+			continue
+		}
+		t := &threads[i]
+		t.Members = append(t.Members, u)
+		if readMS > 0 {
+			if t.ReadUpTo == nil {
+				t.ReadUpTo = map[core.UserID]time.Time{}
+			}
+			t.ReadUpTo[u.ID] = time.UnixMilli(readMS)
 		}
 	}
 	return threads, rows.Err()
@@ -141,6 +152,12 @@ func putThread(ctx context.Context, tx *sql.Tx, t core.Thread) error {
 	if err != nil {
 		return err
 	}
+	// Members are written again in t's order, keeping the latest read
+	// watermark of each.
+	read, err := readUpTo(ctx, tx, t.ID)
+	if err != nil {
+		return err
+	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM thread_members WHERE thread_key = ?", t.ID); err != nil {
 		return err
 	}
@@ -153,8 +170,8 @@ func putThread(ctx context.Context, tx *sql.Tx, t core.Thread) error {
 			return err
 		}
 		_, err = tx.ExecContext(ctx, `
-			INSERT INTO thread_members (thread_key, user_fbid) VALUES (?, ?)
-			ON CONFLICT DO NOTHING`, t.ID, u.ID)
+			INSERT INTO thread_members (thread_key, user_fbid, read_up_to_ms) VALUES (?, ?, ?)
+			ON CONFLICT DO NOTHING`, t.ID, u.ID, max(read[u.ID], t.ReadUpTo[u.ID].UnixMilli()))
 		if err != nil {
 			return err
 		}
@@ -168,6 +185,26 @@ func putThread(ctx context.Context, tx *sql.Tx, t core.Thread) error {
 		}
 	}
 	return nil
+}
+
+// readUpTo returns each cached member's read watermark in a thread, in
+// milliseconds.
+func readUpTo(ctx context.Context, tx *sql.Tx, thread core.ThreadID) (map[core.UserID]int64, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT user_fbid, read_up_to_ms FROM thread_members WHERE thread_key = ?", thread)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	read := map[core.UserID]int64{}
+	for rows.Next() {
+		var u core.UserID
+		var ms int64
+		if err := rows.Scan(&u, &ms); err != nil {
+			return nil, err
+		}
+		read[u] = ms
+	}
+	return read, rows.Err()
 }
 
 // AddMessage stores a live message, or a local one being sent (State is not
@@ -211,9 +248,10 @@ func putMessage(ctx context.Context, tx *sql.Tx, m core.Message) (bool, error) {
 		}
 	}
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (`+messageCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO messages (`+messageCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`,
-		m.ID, m.Thread, m.Sender, m.At.UnixMilli(), m.ContentType, m.Text, m.OTID, m.State)
+		m.ID, m.Thread, m.Sender, m.At.UnixMilli(), m.ContentType, m.Text, m.OTID, m.State,
+		m.ReplyTo.ID, m.ReplyTo.Sender, m.ReplyTo.Text, m.ReplyTo.ContentType)
 	if err != nil {
 		return false, err
 	}
@@ -261,6 +299,20 @@ func (s *Store) MarkRead(ctx context.Context, thread core.ThreadID, until time.T
 		thread, until.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("cache read state: %w", err)
+	}
+	return nil
+}
+
+// PutReadReceipt records that member user has read a thread up to upTo. An
+// older receipt arriving late changes nothing. A receipt for someone not
+// cached as a member is dropped; the next snapshot of the thread carries it.
+func (s *Store) PutReadReceipt(ctx context.Context, thread core.ThreadID, user core.UserID, upTo time.Time) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE thread_members SET read_up_to_ms = max(read_up_to_ms, ?)
+		WHERE thread_key = ? AND user_fbid = ?`,
+		upTo.UnixMilli(), thread, user)
+	if err != nil {
+		return fmt.Errorf("cache read receipt: %w", err)
 	}
 	return nil
 }
@@ -357,7 +409,9 @@ func messagesBefore(ctx context.Context, tx *sql.Tx, thread core.ThreadID, befor
 	for rows.Next() {
 		var m core.Message
 		var ms int64
-		if err := rows.Scan(&m.ID, &m.Thread, &m.Sender, &ms, &m.ContentType, &m.Text, &m.OTID, &m.State); err != nil {
+		q := &m.ReplyTo
+		if err := rows.Scan(&m.ID, &m.Thread, &m.Sender, &ms, &m.ContentType, &m.Text, &m.OTID, &m.State,
+			&q.ID, &q.Sender, &q.Text, &q.ContentType); err != nil {
 			return nil, err
 		}
 		m.At = time.UnixMilli(ms)
