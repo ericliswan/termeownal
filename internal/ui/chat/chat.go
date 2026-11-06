@@ -125,7 +125,8 @@ func (m *Model) render(bottom bool) {
 }
 
 // Render lays out msgs as lines of at most width cells: day separators,
-// then groups of consecutive messages from one sender under a name and time.
+// then groups of consecutive messages from one sender under a name and time,
+// and "Seen" under the user's message if it's the newest and has been read.
 func Render(thread core.Thread, me core.User, msgs []core.Message, more, loading bool, width int, now time.Time) []string {
 	if width <= 2 {
 		return nil
@@ -144,6 +145,7 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, more, loading
 	for _, u := range thread.Members {
 		senders[u.ID] = firstName(u)
 	}
+	seen := seenLine(thread, me, msgs)
 	var prev *core.Message
 	for i := range msgs {
 		m := &msgs[i]
@@ -181,7 +183,41 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, more, loading
 		}
 		prev = m
 	}
+	if seen != "" {
+		lines = append(lines, "  "+theme.Dim.Render(ansi.Truncate(seen, width-2, "…")))
+	}
 	return lines
+}
+
+// seenLine says who has read the newest message, if the user sent it: "Seen"
+// in a 1:1, otherwise "Seen by" and names. It's empty when no one has, or the
+// newest message is someone else's, whose reply shows they read on.
+func seenLine(thread core.Thread, me core.User, msgs []core.Message) string {
+	i := len(msgs) - 1
+	for i >= 0 && !Visible(msgs[i]) {
+		i--
+	}
+	if i < 0 || msgs[i].Sender != me.ID || msgs[i].State != core.Sent {
+		return ""
+	}
+	// Watermarks are in milliseconds; message times may be finer.
+	at := msgs[i].At.UnixMilli()
+	var readers []core.User
+	for _, u := range thread.Members {
+		if upTo, ok := thread.ReadUpTo[u.ID]; ok && upTo.UnixMilli() >= at {
+			readers = append(readers, u)
+		}
+	}
+	switch {
+	case len(readers) == 0:
+		return ""
+	case !thread.IsGroup:
+		return "Seen"
+	case len(readers) == len(thread.Members):
+		return "Seen by everyone"
+	default:
+		return "Seen by " + names(readers)
+	}
 }
 
 // Visible reports whether m is a chat line; reaction log entries aren't.
