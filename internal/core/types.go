@@ -52,6 +52,8 @@ type Thread struct {
 	// Messages holds the newest messages, oldest first, when the backend
 	// returns them with the thread. It may be empty.
 	Messages []Message
+	// ReadUpTo is how far each member has read, where the backend knows.
+	ReadUpTo map[UserID]time.Time
 }
 
 // SendState tracks a message the user sent from this client.
@@ -78,6 +80,18 @@ type Message struct {
 	// sent message carries the same OTID, which is how it is matched.
 	OTID  string
 	State SendState
+	// ReplyTo is the message this one replies to; its ID is "" if none.
+	ReplyTo Quote
+}
+
+// Quote is the message a reply quotes, as it was when the reply was sent.
+// Only ID is set if the service didn't include a copy, e.g. after an unsend.
+type Quote struct {
+	ID     MessageID
+	Sender UserID
+	// Text is empty for non-text messages; show ContentType instead.
+	Text        string
+	ContentType string
 }
 
 // AuthData is a backend's saved login: cookies and cached client state. Only
