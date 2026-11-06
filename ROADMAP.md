@@ -558,7 +558,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 **Done when:** v0.1.0 installs with Homebrew and logs in with a password or cookies. *(Met 3 Nov 2026.)*
 
 ### Phase 3 — Real messenger feel · 1–2 weeks
-- [ ] Replies (render + `r`).
+- [x] Replies (render + `r`).
 - [ ] Typing in/out (configurable).
 - [x] Read receipts per member; "Seen".
 - [ ] Reactions shown + send with `e` (small emoji picker).

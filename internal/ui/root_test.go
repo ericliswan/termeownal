@@ -237,6 +237,11 @@ func TestScreens(t *testing.T) {
 		h.press("j", "enter")
 		golden.RequireEqual(t, h.screen())
 	})
+	t.Run("reply", func(t *testing.T) {
+		h := newHarness(t, 100, 30)
+		h.press("j", "enter", "shift+tab", "k", "r")
+		golden.RequireEqual(t, h.screen())
+	})
 	t.Run("help", func(t *testing.T) {
 		h := newHarness(t, 100, 30)
 		h.press("?")
@@ -265,6 +270,70 @@ func TestSendShowsLocalCopyUntilEcho(t *testing.T) {
 	h.wantOne("hello", core.Sent)
 	if strings.Contains(h.screen(), "sending…") || strings.Contains(h.screen(), "not sent") {
 		t.Fatalf("echoed message still shows a send state:\n%s", h.screen())
+	}
+}
+
+func TestReplyToSelectedMessage(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k")
+	target, ok := h.m.chat.Selected()
+	if !ok || target.State != core.Sent {
+		t.Fatalf("selected = %+v, %v; want a sent message", target, ok)
+	}
+	h.press("r")
+	if h.m.focus != paneComposer || h.m.reply.ID != target.ID {
+		t.Fatalf("after r: focus %d, reply %+v; want the composer replying to %s", h.m.focus, h.m.reply, target.ID)
+	}
+	if !strings.Contains(h.screen(), "↪ Replying to ") {
+		t.Fatalf("no reply line above the composer:\n%s", h.screen())
+	}
+	if newest := h.m.threads[target.Thread].Messages; !strings.Contains(h.screen(), newest[len(newest)-1].Text) {
+		t.Fatalf("the taller composer hid the newest message:\n%s", h.screen())
+	}
+
+	h.press("answer", "enter")
+	if h.m.reply.ID != "" || strings.Contains(h.screen(), "Replying to") {
+		t.Fatalf("reply not cleared after sending:\n%s", h.screen())
+	}
+	if got := h.act.sent[len(h.act.sent)-1].ReplyTo.ID; got != target.ID {
+		t.Fatalf("sent reply to %q, want %q", got, target.ID)
+	}
+	h.wantOne("answer", core.Sending)
+	h.do(h.nextEvent())
+	if msg := h.wantOne("answer", core.Sent); msg.ReplyTo.ID != target.ID {
+		t.Fatalf("echo replies to %q, want %q", msg.ReplyTo.ID, target.ID)
+	}
+	if !strings.Contains(h.screen(), "↪ ") {
+		t.Fatalf("reply shown without its quote:\n%s", h.screen())
+	}
+}
+
+func TestEscCancelsReplyFirst(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "r", "esc")
+	if h.m.reply.ID != "" || h.m.focus != paneComposer {
+		t.Fatalf("first esc: reply %+v, focus %d; want no reply, composer", h.m.reply, h.m.focus)
+	}
+	h.press("esc")
+	if h.m.focus != paneThreads {
+		t.Fatalf("second esc: focus %d, want the thread list", h.m.focus)
+	}
+}
+
+func TestOpeningAnotherThreadDropsReply(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "r", "tab", "j", "enter")
+	if h.m.reply.ID != "" {
+		t.Fatalf("reply %+v kept after opening another thread", h.m.reply)
+	}
+}
+
+func TestReplyKeyIgnoresMessageStillSending(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "pending", "enter") // the echo stays queued
+	h.press("shift+tab", "r")
+	if h.m.reply.ID != "" || h.m.focus != paneChat || len(h.act.sent) != 1 {
+		t.Fatalf("r on a sending message: reply %+v, focus %d, %d sends", h.m.reply, h.m.focus, len(h.act.sent))
 	}
 }
 

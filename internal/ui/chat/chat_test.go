@@ -20,6 +20,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"termeownal/internal/core"
 )
 
@@ -69,5 +71,75 @@ func TestSeenLine(t *testing.T) {
 				t.Errorf("seenLine = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestQuoteText(t *testing.T) {
+	me := core.User{ID: 1}
+	ann := core.User{ID: 2, Name: "Ann Lee"}
+	thread := core.Thread{Members: []core.User{ann}}
+	loaded := []core.Message{{ID: "m1", Sender: ann.ID, Text: "from\nthe cache"}}
+
+	tests := []struct {
+		name string
+		q    core.Quote
+		want string
+	}{
+		{"text", core.Quote{ID: "x", Sender: ann.ID, Text: "hi  there\nyou"}, "Ann: hi there you"},
+		{"own", core.Quote{ID: "x", Sender: me.ID, Text: "hi"}, "You: hi"},
+		{"content type", core.Quote{ID: "x", Sender: ann.ID, ContentType: "IMAGE"}, "Ann: [IMAGE]"},
+		{"empty, loaded", core.Quote{ID: "m1"}, "Ann: from the cache"},
+		{"empty, not loaded", core.Quote{ID: "gone"}, "a message"},
+		{"unknown sender", core.Quote{ID: "x", Sender: 9, Text: "hi"}, "hi"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := QuoteText(thread, me, loaded, tt.q); got != tt.want {
+				t.Errorf("QuoteText = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSelectionMovesAndScrolls(t *testing.T) {
+	at := time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
+	ann := core.User{ID: 2, Name: "Ann"}
+	var msgs []core.Message
+	for i := range 30 {
+		msgs = append(msgs, core.Message{ID: core.MessageID(rune('a' + i)), Sender: ann.ID, At: at.Add(time.Duration(i) * time.Hour), Text: "x"})
+	}
+	msgs[28].ContentType = reactionLog // not selectable
+
+	m := New(func() time.Time { return at })
+	m.SetSize(40, 10)
+	m.Show(core.Thread{ID: 1, Members: []core.User{ann}}, core.User{ID: 1}, msgs, false, false)
+	if _, ok := m.Selected(); ok {
+		t.Fatal("selection while unfocused")
+	}
+	m.SetFocused(true)
+	key := func(r rune) { m, _ = m.Update(tea.KeyPressMsg{Code: r, Text: string(r)}) }
+	want := func(id core.MessageID) {
+		t.Helper()
+		sel, ok := m.Selected()
+		if !ok || sel.ID != id {
+			t.Fatalf("selected %q, want %q", sel.ID, id)
+		}
+		span := m.spans[id]
+		if span[0] < m.vp.YOffset() || span[1] > m.vp.YOffset()+m.vp.Height() {
+			t.Fatalf("selected lines %v outside the view at %d+%d", span, m.vp.YOffset(), m.vp.Height())
+		}
+	}
+	want(msgs[29].ID)
+	key('k')
+	want(msgs[27].ID) // skips the reaction log
+	key('g')
+	want(msgs[0].ID)
+	key('j')
+	want(msgs[1].ID)
+	key('G')
+	want(msgs[29].ID)
+	m.SetFocused(false)
+	if _, ok := m.Selected(); ok {
+		t.Fatal("selection kept after blur")
 	}
 }
