@@ -579,6 +579,8 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 ### Phase 5 — Polish
 - [ ] Desktop notifications when the thread isn't focused (respect mute).
 - [ ] Themes + keybinding config.
+- [ ] Optional chat layout: your messages on the right, others' on the left (#61).
+- [ ] Settings panel: toggles for read receipts, typing, chat layout and notifications, saved to `config.toml` (#62).
 
 ### Stretch
 - [ ] Multiple accounts.

@@ -393,7 +393,7 @@ Done when v0.1.0 installs with Homebrew and logs in with a password or cookies.
 
 **Phase 4 — Media.** Placeholders with metadata · `o` to download and open · inline images on kitty / iTerm2 / sixel with fallback · send images.
 
-**Phase 5 — Polish.** Notifications · themes + keybinding config.
+**Phase 5 — Polish.** Notifications · themes + keybinding config · chat layout with your messages on the right · settings panel.
 
 **Stretch.** Multiple accounts · encrypted cache · `backend/matrix`.
 
