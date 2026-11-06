@@ -560,7 +560,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 ### Phase 3 — Real messenger feel · 1–2 weeks
 - [ ] Replies (render + `r`).
 - [ ] Typing in/out (configurable).
-- [ ] Read receipts per member; "Seen".
+- [x] Read receipts per member; "Seen".
 - [ ] Reactions shown + send with `e` (small emoji picker).
 - [ ] Edits and unsends shown; edit/unsend your own (`EditMessage`, `UnsendMessage`).
 - [ ] New DM with `SearchUsers` (`Ctrl+N`).

@@ -268,6 +268,40 @@ func TestSendShowsLocalCopyUntilEcho(t *testing.T) {
 	}
 }
 
+func TestSeenFollowsReceipts(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "read me", "enter")
+	echo := h.nextEvent().(core.MessageAdded)
+	h.do(echo)
+	if strings.Contains(h.screen(), "Seen") {
+		t.Fatalf("Seen before any receipt:\n%s", h.screen())
+	}
+	st := h.m.threads[echo.Message.Thread]
+	reader := st.Members[0].ID
+	h.do(core.ReadReceipt{Thread: st.ID, User: reader, UpTo: echo.Message.At})
+	if !strings.Contains(h.screen(), "Seen") {
+		t.Fatalf("no Seen after a receipt:\n%s", h.screen())
+	}
+
+	// A late receipt, or a thread with older watermarks, doesn't undo it.
+	h.do(core.ReadReceipt{Thread: st.ID, User: reader, UpTo: echo.Message.At.Add(-time.Hour)})
+	stale := st.Thread
+	stale.Messages, stale.ReadUpTo = nil, nil
+	h.do(core.ThreadUpdated{Thread: stale})
+	if !strings.Contains(h.screen(), "Seen") {
+		t.Fatalf("Seen lost to an older watermark:\n%s", h.screen())
+	}
+
+	// A newer message from the user hasn't been seen yet. (The fake's clock
+	// is fixed, so it's added by hand.)
+	later := echo.Message
+	later.ID, later.OTID, later.Text, later.At = "later", "", "again", later.At.Add(time.Second)
+	h.do(core.MessageAdded{Message: later})
+	if strings.Contains(h.screen(), "Seen") {
+		t.Fatalf("Seen under an unread message:\n%s", h.screen())
+	}
+}
+
 func TestEchoAfterTimeoutReplacesFailedCopy(t *testing.T) {
 	h := newHarness(t, 100, 30)
 	h.press("enter", "late", "enter")

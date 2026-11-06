@@ -21,6 +21,7 @@ package ui
 import (
 	"cmp"
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -261,6 +262,11 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			st.Unread = false
 			m.refresh()
 		}
+	case core.ReadReceipt:
+		if st, ok := m.threads[msg.Thread]; ok {
+			st.ReadUpTo = mergeReads(st.ReadUpTo, map[core.UserID]time.Time{msg.User: msg.UpTo})
+			m.refresh()
+		}
 	case core.MessageAdded:
 		m.addMessage(msg.Message)
 		m.refresh()
@@ -441,10 +447,12 @@ func (m *Model) upsert(t core.Thread) {
 	t = cleanThread(t)
 	st, ok := m.threads[t.ID]
 	if !ok {
+		t.ReadUpTo = mergeReads(nil, t.ReadUpTo)
 		m.threads[t.ID] = &threadState{Thread: t, more: true}
 		return
 	}
 	msgs, dropped := mergePage(st.Messages, t.Messages)
+	t.ReadUpTo = mergeReads(st.ReadUpTo, t.ReadUpTo)
 	st.Thread = t
 	st.Messages = msgs
 	st.more = st.more || dropped
@@ -499,6 +507,21 @@ func (m Model) preview(msgs []core.Message) string {
 		return chat.Body(msgs[i])
 	}
 	return ""
+}
+
+// mergeReads returns a new map of read watermarks with the later of have's
+// and add's for each member: receipts can arrive late or twice.
+func mergeReads(have, add map[core.UserID]time.Time) map[core.UserID]time.Time {
+	out := maps.Clone(have)
+	if out == nil {
+		out = make(map[core.UserID]time.Time, len(add))
+	}
+	for u, t := range add {
+		if t.After(out[u]) {
+			out[u] = t
+		}
+	}
+	return out
 }
 
 // merge adds msgs to have, replacing ones with the same ID, and keeps the
