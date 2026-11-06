@@ -41,14 +41,16 @@ var testNow = time.Date(2026, 10, 28, 15, 0, 0, 0, time.UTC)
 func clock() time.Time { return testNow }
 
 // backendActions runs Actions synchronously against a backend, like app does.
-// Each History call is counted in loads, each Send recorded in sent, and each
-// MarkRead in read; while sendErr is set, Send fails with it.
+// Each History call is counted in loads, each Send recorded in sent, each
+// MarkRead in read and each Typing in typing; while sendErr is set, Send
+// fails with it.
 type backendActions struct {
 	b       core.Backend
 	sendErr error
 	loads   int
 	sent    []core.Message
 	read    []core.Message
+	typing  []core.Typing
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -82,6 +84,13 @@ func (a *backendActions) MarkRead(upTo core.Message) tea.Cmd {
 	}
 }
 
+func (a *backendActions) Typing(thread core.ThreadID, active bool) tea.Cmd {
+	return func() tea.Msg {
+		a.typing = append(a.typing, core.Typing{Thread: thread, Active: active})
+		return nil
+	}
+}
+
 func newFake(t *testing.T) *fake.Backend {
 	t.Helper()
 	b := fake.New(fake.Options{Now: clock})
@@ -107,8 +116,8 @@ func snapshot(t *testing.T, b core.Backend) SnapshotMsg {
 }
 
 // harness drives a Model by hand, running each returned command to
-// completion before the next message. Echo timeouts are held in timeouts
-// until expire delivers them.
+// completion before the next message. Timers are held in timeouts until
+// expire delivers them.
 type harness struct {
 	t        *testing.T
 	b        *fake.Backend
@@ -122,7 +131,9 @@ func newHarness(t *testing.T, w, h int) *harness {
 	b := newFake(t)
 	act := &backendActions{b: b}
 	hs := &harness{t: t, b: b, act: act, m: New(act, clock)}
-	hs.m.echoTimeout = 0
+	hs.m.tick = func(_ time.Duration, fire func(time.Time) tea.Msg) tea.Cmd {
+		return func() tea.Msg { return timer{fire(testNow)} }
+	}
 	hs.do(tea.WindowSizeMsg{Width: w, Height: h})
 	hs.do(snapshot(t, b))
 	return hs
@@ -142,8 +153,8 @@ func (h *harness) run(cmd tea.Cmd) {
 	}
 	switch msg := cmd().(type) {
 	case nil, tea.QuitMsg:
-	case echoTimeoutMsg:
-		h.timeouts = append(h.timeouts, msg)
+	case timer:
+		h.timeouts = append(h.timeouts, msg.msg)
 	case tea.BatchMsg:
 		for _, c := range msg {
 			h.run(c)
@@ -161,6 +172,7 @@ func (h *harness) press(keys ...string) {
 		"tab":       {Code: tea.KeyTab},
 		"shift+tab": {Code: tea.KeyTab, Mod: tea.ModShift},
 		"pgup":      {Code: tea.KeyPgUp},
+		"backspace": {Code: tea.KeyBackspace},
 	}
 	for _, k := range keys {
 		if msg, ok := special[k]; ok {
@@ -173,7 +185,10 @@ func (h *harness) press(keys ...string) {
 	}
 }
 
-// expire delivers the held echo timeouts, as if echoTimeout had passed.
+// timer wraps a timer's message, so run holds it.
+type timer struct{ msg tea.Msg }
+
+// expire delivers the held timers' messages, as if their time had passed.
 func (h *harness) expire() {
 	h.t.Helper()
 	msgs := h.timeouts
@@ -404,6 +419,77 @@ func TestSeenFollowsReceipts(t *testing.T) {
 	}
 }
 
+func TestOthersTyping(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	id, _ := h.m.chat.Thread()
+	who := h.m.threads[id].Members[0].ID
+	start := core.Typing{Thread: id, User: who, Active: true}
+	typing := func(want bool, when string) {
+		t.Helper()
+		if got := strings.Contains(h.screen(), "is typing…"); got != want {
+			t.Fatalf("%s: typing shown = %t\n%s", when, got, h.screen())
+		}
+	}
+
+	h.do(start)
+	typing(true, "after a start")
+	h.do(core.Typing{Thread: id, User: who})
+	typing(false, "after a stop")
+
+	h.do(start)
+	h.do(core.MessageAdded{Message: core.Message{ID: "typed", Thread: id, Sender: who, At: testNow, Text: "hi"}})
+	typing(false, "after their message")
+
+	// Each start shows it for typingShown; an older start's timer doesn't
+	// end a newer one.
+	h.timeouts = nil
+	h.do(start)
+	h.do(start)
+	h.do(h.timeouts[0])
+	typing(true, "after the first start's timer")
+	h.do(h.timeouts[1])
+	typing(false, "after the last start's timer")
+}
+
+func TestTellsThreadWhileTyping(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	id, _ := h.m.chat.Thread()
+	var want []core.Typing
+	told := func(active bool, when string) {
+		t.Helper()
+		want = append(want, core.Typing{Thread: id, Active: active})
+		if !slices.Equal(h.act.typing, want) {
+			t.Fatalf("%s: typing calls %+v, want %+v", when, h.act.typing, want)
+		}
+	}
+
+	h.press("hi")
+	told(true, "typing (once, as the clock hasn't moved)")
+	h.press("enter")
+	told(false, "after sending")
+
+	h.timeouts = nil
+	h.press("ab")
+	told(true, "typing again")
+	h.do(h.timeouts[0])
+	if len(h.act.typing) != len(want) {
+		t.Fatalf("stopped by an older edit's idle timer: %+v", h.act.typing)
+	}
+	h.do(h.timeouts[1])
+	told(false, "after typingIdle")
+
+	h.press("c")
+	told(true, "typing after the idle stop")
+	h.press("backspace", "backspace", "backspace")
+	told(false, "after clearing the text")
+
+	h.press("d", "esc", "j", "enter")
+	want = append(want, core.Typing{Thread: id, Active: true})
+	told(false, "after typing, then switching threads")
+}
+
 func TestEchoAfterTimeoutReplacesFailedCopy(t *testing.T) {
 	h := newHarness(t, 100, 30)
 	h.press("enter", "late", "enter")
@@ -449,8 +535,10 @@ func TestSendErrorMarksFailed(t *testing.T) {
 	if !strings.Contains(h.screen(), "boom") {
 		t.Fatalf("send error not shown:\n%s", h.screen())
 	}
-	if len(h.timeouts) != 0 {
-		t.Fatal("echo timeout started for a failed send")
+	for _, msg := range h.timeouts {
+		if _, ok := msg.(echoTimeoutMsg); ok {
+			t.Fatal("echo timeout started for a failed send")
+		}
 	}
 
 	h.act.sendErr = nil

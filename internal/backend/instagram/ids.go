@@ -29,12 +29,15 @@ type threadIDs struct {
 	long  string // ThreadInfo.ThreadID: marking read
 }
 
-// idMap maps thread keys to their other IDs, and short IDs back to keys. It
-// learns them from every thread and ID lookup; it isn't saved.
+// idMap maps thread keys to their other IDs and back, and users' IGIDs to
+// their FBIDs, for typing notifications. It learns them from every thread
+// and ID lookup; it isn't saved.
 type idMap struct {
 	mu      sync.Mutex
 	byKey   map[core.ThreadID]threadIDs
 	byShort map[string]core.ThreadID
+	byLong  map[string]core.ThreadID
+	users   map[string]core.UserID
 }
 
 // add records a thread's IDs. A thread's short ID can change (a new DM gets
@@ -48,12 +51,28 @@ func (m *idMap) add(key core.ThreadID, ids threadIDs) {
 	if m.byKey == nil {
 		m.byKey = map[core.ThreadID]threadIDs{}
 		m.byShort = map[string]core.ThreadID{}
+		m.byLong = map[string]core.ThreadID{}
 	}
-	if old, ok := m.byKey[key]; ok && old.short != ids.short {
+	if old, ok := m.byKey[key]; ok {
 		delete(m.byShort, old.short)
+		delete(m.byLong, old.long)
 	}
 	m.byKey[key] = ids
 	m.byShort[ids.short] = key
+	m.byLong[ids.long] = key
+}
+
+// addUser records a user's FBID by IGID.
+func (m *idMap) addUser(igid string, fbid core.UserID) {
+	if igid == "" || fbid == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.users == nil {
+		m.users = map[string]core.UserID{}
+	}
+	m.users[igid] = fbid
 }
 
 // get returns a thread's IDs.
@@ -70,4 +89,20 @@ func (m *idMap) key(short string) (core.ThreadID, bool) {
 	defer m.mu.Unlock()
 	key, ok := m.byShort[short]
 	return key, ok
+}
+
+// keyOfLong returns the key of the thread with a long ID.
+func (m *idMap) keyOfLong(long string) (core.ThreadID, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	key, ok := m.byLong[long]
+	return key, ok
+}
+
+// user returns the FBID of the user with an IGID.
+func (m *idMap) user(igid string) (core.UserID, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	fbid, ok := m.users[igid]
+	return fbid, ok
 }

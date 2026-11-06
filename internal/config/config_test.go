@@ -55,18 +55,18 @@ func TestLoad(t *testing.T) {
 		{"empty file", "", Default()},
 		{
 			"all settings",
-			"log_level = \"debug\"\nforce_refresh_interval = \"6h30m\"\n",
+			"log_level = \"debug\"\nforce_refresh_interval = \"6h30m\"\nsend_typing = false\n",
 			Config{LogLevel: zerolog.DebugLevel, ForceRefreshInterval: 6*time.Hour + 30*time.Minute},
 		},
 		{
 			"one setting keeps other defaults",
 			"log_level = \"warn\"\n",
-			Config{LogLevel: zerolog.WarnLevel, ForceRefreshInterval: Default().ForceRefreshInterval},
+			Config{LogLevel: zerolog.WarnLevel, ForceRefreshInterval: Default().ForceRefreshInterval, SendTyping: true},
 		},
 		{
 			"refresh disabled",
 			"force_refresh_interval = \"0s\"\n",
-			Config{LogLevel: zerolog.InfoLevel},
+			Config{LogLevel: zerolog.InfoLevel, SendTyping: true},
 		},
 	}
 	for _, tt := range tests {

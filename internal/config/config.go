@@ -38,6 +38,9 @@ type Config struct {
 	// ForceRefreshInterval is how often to force a full reconnect, which
 	// keeps long sessions from drifting. Zero disables it.
 	ForceRefreshInterval time.Duration `toml:"force_refresh_interval"`
+	// SendTyping tells a thread's members while you type. Others' typing
+	// shows either way.
+	SendTyping bool `toml:"send_typing"`
 }
 
 // minForceRefresh matches upstream's limit of one full reconnect per hour.
@@ -48,6 +51,7 @@ func Default() Config {
 	return Config{
 		LogLevel:             zerolog.InfoLevel,
 		ForceRefreshInterval: 20 * time.Hour,
+		SendTyping:           true,
 	}
 }
 

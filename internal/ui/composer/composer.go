@@ -86,6 +86,9 @@ func (m *Model) SetWidth(w int) { m.width = w; m.ta.SetWidth(w) }
 // It changes Height.
 func (m *Model) SetReply(quote string) { m.reply = quote }
 
+// Value is the text being written.
+func (m Model) Value() string { return m.ta.Value() }
+
 // Height is the inner height.
 func (m Model) Height() int {
 	h := m.ta.Height() + len(m.sugg)

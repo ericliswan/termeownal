@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"strconv"
 
 	"go.mau.fi/mautrix-meta/pkg/instameow"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
@@ -81,6 +82,17 @@ func (b *Backend) handle(ctx context.Context, ev slidetypes.ClientEvent) error {
 	case *slidetypes.AuthError:
 		b.log.Warn().Err(ev.Error).Msg("Instagram rejected the login")
 		b.fail(coreError(ev.Error))
+	case *slidetypes.TypingNotification:
+		// From the typing socket's goroutine, with the long thread ID and
+		// the sender's IGID. The viewer isn't a member, so their own typing
+		// on another device is dropped here.
+		key, ok := b.ids.keyOfLong(ev.ThreadID)
+		user, known := b.ids.user(strconv.FormatInt(ev.SenderID, 10))
+		if !ok || !known {
+			b.log.Debug().Msg("typing in an unknown thread or by an unknown user")
+			return nil
+		}
+		return b.send(ctx, core.Typing{Thread: key, User: user, Active: ev.ActivityStatus != 0})
 	default:
 		b.log.Debug().Str("event", fmt.Sprintf("%T", ev)).Msg("event ignored")
 	}

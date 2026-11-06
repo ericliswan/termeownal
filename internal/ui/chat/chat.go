@@ -49,6 +49,7 @@ type Model struct {
 	msgs    []core.Message
 	more    bool
 	loading bool
+	typing  []core.UserID // members typing now
 
 	focused  bool
 	selected core.MessageID
@@ -75,11 +76,11 @@ func (m *Model) SetSize(w, h int) {
 // messages exist and loading whether they are being fetched. Showing a new
 // thread scrolls to the bottom; otherwise the view stays where the user left
 // it, following new messages only when already at the bottom.
-func (m *Model) Show(thread core.Thread, me core.User, msgs []core.Message, more, loading bool) {
+func (m *Model) Show(thread core.Thread, me core.User, msgs []core.Message, more, loading bool, typing []core.UserID) {
 	switched := !m.open || m.thread.ID != thread.ID
 	prepended := !switched && len(m.msgs) > 0 && len(msgs) > 0 &&
 		m.msgs[0].ID != msgs[0].ID && m.msgs[len(m.msgs)-1].ID == msgs[len(msgs)-1].ID
-	m.open, m.thread, m.me, m.msgs, m.more, m.loading = true, thread, me, msgs, more, loading
+	m.open, m.thread, m.me, m.msgs, m.more, m.loading, m.typing = true, thread, me, msgs, more, loading, typing
 	if switched {
 		m.selected = ""
 	}
@@ -227,6 +228,9 @@ func (m *Model) render(bottom bool) {
 	}
 	var lines []string
 	lines, m.spans = Render(m.thread, m.me, m.msgs, selected, m.more, m.loading, m.vp.Width(), m.now())
+	if t := typingLine(m.thread, m.typing); t != "" && m.vp.Width() > 2 {
+		lines = append(lines, "  "+theme.Dim.Render(ansi.Truncate(t, m.vp.Width()-2, "…")))
+	}
 	m.vp.SetContentLines(lines)
 	if bottom {
 		m.vp.GotoBottom()
@@ -371,6 +375,24 @@ func seenLine(thread core.Thread, me core.User, msgs []core.Message) string {
 	default:
 		return "Seen by " + names(readers)
 	}
+}
+
+// typingLine names the members in typing, in member order: "Ann is
+// typing…" or "Ann, Bo are typing…". It's empty when no one is.
+func typingLine(thread core.Thread, typing []core.UserID) string {
+	var who []core.User
+	for _, u := range thread.Members {
+		if slices.Contains(typing, u.ID) {
+			who = append(who, u)
+		}
+	}
+	switch len(who) {
+	case 0:
+		return ""
+	case 1:
+		return firstName(who[0]) + " is typing…"
+	}
+	return names(who) + " are typing…"
 }
 
 // Visible reports whether m is a chat line; reaction log entries aren't.

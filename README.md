@@ -59,12 +59,13 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Sent messages show right away, with a retry (`r`) if one fails
 - Replies: select a message with `j`/`k` and press `r`; quoted replies show above the message
 - "Seen" under your newest message once the other side has read it
+- Typing indicators both ways; set `send_typing = false` to stop sending yours
 - Emoji by name, as in Discord: type `:heart:` for ❤️, or pick from the matches shown after `:he`
 - Unread markers; opening a thread marks it read, here and on Instagram (only while the terminal is focused)
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
 
-**Next:** reactions, edits and unsends, typing indicators, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
+**Next:** reactions, edits and unsends, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
 
 ## Installing
 
@@ -158,6 +159,9 @@ log_level = "info"
 
 # How often to do a full reconnect. "0" turns it off; otherwise at least "1h".
 force_refresh_interval = "20h"
+
+# Tell others when you're typing. Theirs shows either way.
+send_typing = true
 ```
 
 ## Development

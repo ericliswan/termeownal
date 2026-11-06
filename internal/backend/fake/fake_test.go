@@ -279,6 +279,27 @@ func TestReadAfter(t *testing.T) {
 	}
 }
 
+func TestTypingBeforeIncoming(t *testing.T) {
+	b := newBackend(t, Options{IncomingEvery: time.Millisecond, TypingFor: time.Millisecond})
+	_, threads, _ := b.Snapshot(t.Context())
+	if err := b.Typing(t.Context(), threads[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Typing(t.Context(), 42, true); err == nil {
+		t.Error("typing in an unknown thread accepted")
+	}
+	go func() { _ = b.Connect(t.Context()) }()
+	next(t, b) // Connected
+	typing, ok := next(t, b).(core.Typing)
+	if !ok || !typing.Active {
+		t.Fatalf("first event %+v, want a start of typing", typing)
+	}
+	m := next(t, b).(core.MessageAdded).Message
+	if m.Thread != typing.Thread || m.Sender != typing.User {
+		t.Fatalf("message %+v doesn't follow typing %+v", m, typing)
+	}
+}
+
 func TestSeqIDsFollowTheirDeltas(t *testing.T) {
 	b := newBackend(t, Options{IncomingEvery: time.Millisecond})
 	_, threads, _ := b.Snapshot(t.Context())

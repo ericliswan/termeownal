@@ -46,6 +46,10 @@ type Backend interface {
 	// MarkRead marks upTo's thread read up to and including upTo.
 	MarkRead(ctx context.Context, upTo Message) error
 
+	// Typing tells thread's members whether the user is typing. Without a
+	// stop, they stop seeing it a few seconds after the last start.
+	Typing(ctx context.Context, thread ThreadID, active bool) error
+
 	// Connect runs the live connection, reconnecting on its own, and blocks
 	// until ctx is cancelled, Close is called, or the backend sends
 	// ResyncNeeded.

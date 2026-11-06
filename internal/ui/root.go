@@ -63,6 +63,9 @@ type Actions interface {
 	// MarkRead marks upTo's thread read up to upTo, on the service and in
 	// the cache; returns an ErrorMsg if that fails, otherwise nil.
 	MarkRead(upTo core.Message) tea.Cmd
+	// Typing tells thread's members whether the user is typing; returns
+	// nil.
+	Typing(thread core.ThreadID, active bool) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -92,6 +95,25 @@ type SentMsg struct {
 // echoTimeoutMsg fires echoTimeout after the service accepted msg.
 type echoTimeoutMsg struct{ msg core.Message }
 
+// Typing: someone's typing shows for typingShown after their last start
+// (upstream's timeout); the user's is sent again every typingRefresh while
+// they type, and stopped typingIdle after their last edit.
+const (
+	typingShown   = 6 * time.Second
+	typingRefresh = 4 * time.Second
+	typingIdle    = 5 * time.Second
+)
+
+// typingShownMsg fires typingShown after user's start number gen.
+type typingShownMsg struct {
+	thread core.ThreadID
+	user   core.UserID
+	gen    int
+}
+
+// typingIdleMsg fires typingIdle after composer edit number gen.
+type typingIdleMsg struct{ gen int }
+
 // errNoEcho marks a message that was accepted but never echoed.
 var errNoEcho = errors.New("send: no confirmation from the server")
 
@@ -114,6 +136,13 @@ type threadState struct {
 	more    bool // older messages exist
 	loading bool // a History call is running
 	fetched bool // the newest page has been loaded since start
+	// typing maps each member typing now to the number of their last start.
+	typing map[core.UserID]int
+}
+
+// typers lists the members typing now.
+func (st *threadState) typers() []core.UserID {
+	return slices.Collect(maps.Keys(st.typing))
 }
 
 // Model is the top-level UI model.
@@ -134,12 +163,21 @@ type Model struct {
 
 	// outbox holds local messages to send, oldest first; the first is being
 	// sent. One at a time, so they arrive in order.
-	outbox      []core.Message
-	echoTimeout time.Duration
+	outbox []core.Message
+
+	// tick is tea.Tick; tests replace it to hold timers until they fire them.
+	tick func(time.Duration, func(time.Time) tea.Msg) tea.Cmd
 
 	// blurred is set while the terminal reports it isn't focused. One that
 	// doesn't report focus counts as focused.
 	blurred bool
+
+	// typingStarts numbers others' starts of typing, and edits the
+	// composer's edits. typingTo is the thread told the user is typing, 0
+	// for none, last at typingAt.
+	typingStarts, edits int
+	typingTo            core.ThreadID
+	typingAt            time.Time
 
 	width, height int
 	status        core.Status
@@ -151,13 +189,13 @@ type Model struct {
 // New returns the UI. now is the clock used to label times.
 func New(act Actions, now func() time.Time) Model {
 	return Model{
-		act:         act,
-		now:         now,
-		echoTimeout: echoTimeout,
-		threads:     make(map[core.ThreadID]*threadState),
-		list:        threadlist.New(now),
-		chat:        chat.New(now),
-		composer:    composer.New(),
+		act:      act,
+		now:      now,
+		tick:     tea.Tick,
+		threads:  make(map[core.ThreadID]*threadState),
+		list:     threadlist.New(now),
+		chat:     chat.New(now),
+		composer: composer.New(),
 	}
 }
 
@@ -209,7 +247,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m = m.fail(msg.Err)
 			}
 		} else {
-			cmds = append(cmds, tea.Tick(m.echoTimeout, func(time.Time) tea.Msg { return echoTimeoutMsg{msg.Message} }))
+			cmds = append(cmds, m.tick(echoTimeout, func(time.Time) tea.Msg { return echoTimeoutMsg{msg.Message} }))
 		}
 		if len(m.outbox) > 0 {
 			cmds = append(cmds, m.act.Send(m.outbox[0]))
@@ -274,6 +312,33 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case core.MessageAdded:
 		m.addMessage(msg.Message)
 		m.refresh()
+	case core.Typing:
+		st, ok := m.threads[msg.Thread]
+		if !ok {
+			return m, nil
+		}
+		delete(st.typing, msg.User)
+		var cmd tea.Cmd
+		if msg.Active {
+			m.typingStarts++
+			if st.typing == nil {
+				st.typing = make(map[core.UserID]int)
+			}
+			st.typing[msg.User] = m.typingStarts
+			expired := typingShownMsg{msg.Thread, msg.User, m.typingStarts}
+			cmd = m.tick(typingShown, func(time.Time) tea.Msg { return expired })
+		}
+		m.refresh()
+		return m, cmd
+	case typingShownMsg:
+		if st, ok := m.threads[msg.thread]; ok && st.typing[msg.user] == msg.gen {
+			delete(st.typing, msg.user)
+			m.refresh()
+		}
+	case typingIdleMsg:
+		if msg.gen == m.edits {
+			return m, m.stopTyping()
+		}
 	}
 	return m, nil
 }
@@ -319,10 +384,12 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case paneThreads:
 		if s == "enter" {
 			if id, ok := m.list.Selected(); ok {
+				var stop tea.Cmd
 				if cur, _ := m.chat.Thread(); cur != id {
 					m.setReply(core.Quote{})
+					stop = m.stopTyping()
 				}
-				return m, tea.Batch(m.open(id), m.setFocus(paneComposer))
+				return m, tea.Batch(stop, m.open(id), m.setFocus(paneComposer))
 			}
 			return m, nil
 		}
@@ -337,13 +404,44 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
-		h := m.composer.Height()
+		h, text := m.composer.Height(), m.composer.Value()
 		m.composer, cmd = m.composer.Update(k)
 		if m.composer.Height() != h {
 			m.layout()
 		}
+		if m.composer.Value() != text {
+			cmd = tea.Batch(cmd, m.typed())
+		}
 	}
 	return m, cmd
+}
+
+// typed tells the open thread the user is typing after an edit: a start at
+// most every typingRefresh, and a stop once the text is blank (cleared or
+// sent) or typingIdle after the last edit.
+func (m *Model) typed() tea.Cmd {
+	id, ok := m.chat.Thread()
+	if !ok || strings.TrimSpace(m.composer.Value()) == "" {
+		return m.stopTyping()
+	}
+	m.edits++
+	edit := m.edits
+	cmds := []tea.Cmd{m.tick(typingIdle, func(time.Time) tea.Msg { return typingIdleMsg{edit} })}
+	if now := m.now(); m.typingTo != id || now.Sub(m.typingAt) >= typingRefresh {
+		m.typingTo, m.typingAt = id, now
+		cmds = append(cmds, m.act.Typing(id, true))
+	}
+	return tea.Batch(cmds...)
+}
+
+// stopTyping tells the thread told the user is typing that they stopped.
+func (m *Model) stopTyping() tea.Cmd {
+	if m.typingTo == 0 {
+		return nil
+	}
+	id := m.typingTo
+	m.typingTo = 0
+	return m.act.Typing(id, false)
 }
 
 func (m *Model) setFocus(p pane) tea.Cmd {
@@ -367,7 +465,7 @@ func (m *Model) open(id core.ThreadID) tea.Cmd {
 		st.loading = true
 		cmd = m.act.History(id, "", historyPage)
 	}
-	m.chat.Show(st.Thread, m.me, st.Messages, st.more, st.loading)
+	m.chat.Show(st.Thread, m.me, st.Messages, st.more, st.loading, st.typers())
 	return cmd
 }
 
@@ -518,6 +616,7 @@ func (m *Model) addMessage(msg core.Message) {
 		m.threads[msg.Thread] = st
 	}
 	st.Messages = merge(st.Messages, []core.Message{msg})
+	delete(st.typing, msg.Sender) // their message ends their typing
 	if msg.At.After(st.LastActivity) {
 		st.LastActivity = msg.At
 	}
@@ -542,7 +641,7 @@ func (m *Model) refresh() {
 	m.list.SetItems(items)
 	if id, ok := m.chat.Thread(); ok {
 		st := m.threads[id]
-		m.chat.Show(st.Thread, m.me, st.Messages, st.more, st.loading)
+		m.chat.Show(st.Thread, m.me, st.Messages, st.more, st.loading, st.typers())
 	}
 }
 

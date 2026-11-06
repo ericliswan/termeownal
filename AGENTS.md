@@ -122,9 +122,9 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
   - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
-  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends, typing).
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Typing`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends).
   - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
-  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`), then `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`, `Typing`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`) and `Typing` (another member's; the viewer's own, from another device, is dropped), then `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`.
   - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
@@ -149,7 +149,7 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 Names below are from `mautrix/meta` `main` as of 27 Oct 2026. Upstream is an **internal, unstable API**: verify against the pinned version before relying on a detail, and update this section when it changes.
 
 ### 6.1 Client
-`instameow.NewClient(instameow.ClientParams{Cookies, Log, Settings, EventHandler, SeqID, SeqIDTS, DisableTyping, NativeSession})`. `Cookies` is a `*cookies.Cookies{Platform: types.Instagram}` from `pkg/messagix/cookies`. See `igconnector/login.go` → `getInstaClient` for a working example.
+`instameow.NewClient(instameow.ClientParams{Cookies, Log, Settings, EventHandler, SeqID, SeqIDTS, DisableTyping, NativeSession})`. `Cookies` is a `*cookies.Cookies{Platform: types.Instagram}` from `pkg/messagix/cookies`. Leave `DisableTyping` unset: it stops incoming typing too, so `send_typing = false` (§7.7) is applied in `app`, which then never calls `Backend.Typing`. See `igconnector/login.go` → `getInstaClient` for a working example.
 
 Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnFBID`, `GetCookies`, `IsAuthenticated`, `SetLogger`, `SetEventHandler`, `GetHTTP`.
 
@@ -164,7 +164,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 | History | `PaginateMessages(&PaginateMessagesRequest{ThreadID: shortID, OlderThanMessageID, FirstN})` |
 | Send text | `SendMessage(&SendTextRequest{IGThreadIGID: &shortID, Text, OfflineThreadingID, ReplyToMessageID})`; first message to a new user: `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID` |
 | Mark read | `MarkRead(req)` then `MarkReadValidation(req)`, `req.Metadata.IGThreadIGID = longID`, `req.Data.MessageID` |
-| Typing out | `SetTyping(ctx, shortID, bool)` (no-op when `DisableTyping` is set) |
+| Typing out | `SetTyping(ctx, shortID, bool)` (no-op when `DisableTyping` is set; fails before `Connect`) |
 | Search / new DM | `SearchUsers`, `GetUserForNewDM(ctx, fbid)`, `GetProfile`, `FetchThreadID(ctx, userFBID)` |
 | Reactions, edit, unsend | `SendReaction`, `EditMessage`, `UnsendMessage` |
 | Message requests | `AcceptMessageRequest` |
@@ -183,7 +183,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 
 - The delta field is named `ThreadIGID` but its JSON tag is `thread_fbid` — it holds the **short** ID. If empty, fall back to `Message.ThreadFBID`. Trust JSON tags, not Go field names.
 - Deltas with an empty `thread_fbid` are ignored types (e.g. `Create1To1Thread`); don't look them up.
-- Typing notifications carry the **long** ID and the sender's **IGID**, so keep long → key and IGID → FBID maps too.
+- Typing notifications carry the **long** ID and the sender's **IGID**, so keep long → key and IGID → FBID maps too (from thread user lists, which exclude the viewer). An unknown long ID or IGID is logged at `debug` and dropped: typing is transient, not worth a lookup.
 - `ids.go` maintains `key ↔ short ↔ long` in memory from every mailbox, thread and `FetchThreadID` response; it isn't persisted. Unknown short ID in a delta → `GetThread`, store mappings, send the thread as `ThreadUpdated`, then apply the delta. A key with no mapping (e.g. a cached thread opened before the first `Snapshot`) → `FetchThreadID(key)`, and if that fails `GetThread(key)` (a group's key is its short ID): the adapter can't tell a 1:1 key from a group's.
 - Users: `core.UserID` = FBID (`SenderFBID`, `GetOwnFBID`); store IGID and username alongside. A thread's `users` list excludes the viewer.
 - `docs/ids.md` is the verified source of truth. Read it before touching IDs.
@@ -302,6 +302,7 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 - Emoji shortcodes in the composer, as in Discord: `:heart:` becomes ❤️ when the closing `:` is typed; after `:` and two letters, up to 5 matches show above the text (`↑`/`↓` move, `Tab`/`Enter` pick, `Esc` closes). The colon must start a word (`10:30` isn't one). Names come from `internal/ui/emoji/table.go`, generated from GitHub's gemoji (MIT) with `go generate ./internal/ui/emoji`.
 - Mark read only when the thread is visible and the terminal is focused (`tea.WithReportFocus`); no focus reporting → assume focused.
 - Unread: bold + `●`. Muted: dimmed. Day separators; group consecutive messages by sender.
+- "<name> is typing…" (or "A, B are typing…") at the bottom of the chat view; each start shows it for 6 s, and a stop or the member's message clears it. While the user types, the open thread is told at most every 4 s, and told they stopped on send, on clearing the text, on opening another thread or 5 s after the last edit.
 - "Seen" (1:1), "Seen by" + names or "Seen by everyone" (group) under the user's message only when it's the newest in the thread; a reply already shows the other side read on. The UI keeps the highest watermark per member, like the store.
 - Respect `NO_COLOR`; handle resize; "terminal too small" below 60×15; width-aware wrapping for emoji/CJK.
 - Status bar reflects `StatusChanged`; `AuthFailed` shows a persistent banner.
@@ -309,9 +310,9 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 ### 7.7 Config and logs (`config`, `app`)
 - Paths come from `adrg/xdg`: `termeownal/config.toml` in the config dir, the data dir for the cache and `session.enc`, `termeownal/meow.log` in the state dir. On macOS all three are under `~/Library/Application Support/termeownal`. `XDG_*` variables override them.
 - The config file is optional; a missing file means defaults. Unknown keys and bad values are errors that name the file.
-- Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads) and `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`). The once-an-hour full-reconnect floor is a constant, not a setting.
+- Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads), `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`) and `send_typing` (default `true`; `false` stops telling others you're typing, while theirs still shows). The once-an-hour full-reconnect floor is a constant, not a setting.
 - `app.OpenLog` appends JSON lines to `meow.log` (file `0600`, directory `0700`). No rotation yet.
-- Add a key only when a feature needs it (typing settings arrive in Phase 3), and add it here.
+- Add a key only when a feature needs it, and add it here.
 
 ---
 
