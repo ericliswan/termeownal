@@ -301,8 +301,9 @@ func (*Backend) NewOTID() string {
 	return strconv.FormatInt(methods.GenerateEpochID(), 10)
 }
 
-// Send sends text to a thread. Its echo arrives as a MessageAdded.
-func (b *Backend) Send(ctx context.Context, thread core.ThreadID, text, otid string) error {
+// Send sends text to a thread, as a reply to replyTo unless it is "". Its
+// echo arrives as a MessageAdded.
+func (b *Backend) Send(ctx context.Context, thread core.ThreadID, text, otid string, replyTo core.MessageID) error {
 	client, err := b.current()
 	if err != nil {
 		return err
@@ -311,12 +312,17 @@ func (b *Backend) Send(ctx context.Context, thread core.ThreadID, text, otid str
 	if err != nil {
 		return err
 	}
-	_, err = client.SendMessage(ctx, &slidetypes.SendTextRequest{
+	req := &slidetypes.SendTextRequest{
 		IGThreadIGID:       &ids.short,
 		OfflineThreadingID: otid,
 		Text:               slidetypes.SensitiveString{Value: text},
 		SendAttribution:    new("igd_web_chat_tab:in_thread"),
-	})
+	}
+	if replyTo != "" {
+		// Upstream sets only this field for a reply.
+		req.ReplyToMessageID = new(string(replyTo))
+	}
+	_, err = client.SendMessage(ctx, req)
 	if err != nil {
 		return fmt.Errorf("send: %w", coreError(err))
 	}

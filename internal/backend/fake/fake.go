@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -50,6 +51,9 @@ type Options struct {
 	IncomingEvery time.Duration
 	// EchoDelay is how long the echo of a sent message takes to arrive.
 	EchoDelay time.Duration
+	// ReadAfter is how long after its echo a sent message is read by the
+	// thread's first member. Zero means it never is.
+	ReadAfter time.Duration
 }
 
 // Backend is a fake core.Backend. It is safe for concurrent use.
@@ -123,6 +127,7 @@ func (b *Backend) Snapshot(context.Context) (core.User, []core.Thread, error) {
 	for i, t := range b.threads {
 		threads[i] = t.Thread
 		threads[i].Members = slices.Clone(t.Members)
+		threads[i].ReadUpTo = maps.Clone(t.ReadUpTo)
 		threads[i].Messages = slices.Clone(t.history[max(0, len(t.history)-snapshotMessages):])
 	}
 	slices.SortStableFunc(threads, func(a, b core.Thread) int { return b.LastActivity.Compare(a.LastActivity) })
@@ -156,31 +161,55 @@ func (b *Backend) NewOTID() string {
 	return fmt.Sprintf("fake-otid-%d", b.nextOTID)
 }
 
-// Send queues the echo of text after EchoDelay. A repeated OTID is accepted
-// but not sent again.
-func (b *Backend) Send(_ context.Context, thread core.ThreadID, text, otid string) error {
+// Send queues the echo of text after EchoDelay, and its read receipt after
+// ReadAfter more. A repeated OTID is accepted but not sent again.
+func (b *Backend) Send(_ context.Context, thread core.ThreadID, text, otid string, replyTo core.MessageID) error {
 	if text == "" || otid == "" {
 		return errors.New("fake: send: empty text or OTID")
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if _, err := b.threadLocked(thread); err != nil {
+	t, err := b.threadLocked(thread)
+	if err != nil {
 		return err
+	}
+	m := core.Message{Thread: thread, Sender: me.ID, Text: text, OTID: otid}
+	if replyTo != "" {
+		i := slices.IndexFunc(t.history, func(m core.Message) bool { return m.ID == replyTo })
+		if i < 0 {
+			return fmt.Errorf("fake: send: unknown message %q", replyTo)
+		}
+		m.ReplyTo = quote(t.history[i])
 	}
 	if b.sentOTID[otid] {
 		return nil
 	}
 	b.sentOTID[otid] = true
+	reader := t.Members[0].ID
 	return b.goLocked(func() {
-		select {
-		case <-time.After(b.opts.EchoDelay):
-		case <-b.ctx.Done():
+		if !b.sleep(b.opts.EchoDelay) {
 			return
 		}
-		if m, err := b.addMessage(thread, me.ID, text, otid); err == nil {
-			_ = b.emitDelta(b.ctx, core.MessageAdded{Message: m})
+		echo, err := b.addMessage(m)
+		if err != nil || b.emitDelta(b.ctx, core.MessageAdded{Message: echo}) != nil ||
+			b.opts.ReadAfter <= 0 || !b.sleep(b.opts.ReadAfter) {
+			return
 		}
+		b.mu.Lock()
+		t.ReadUpTo[reader] = echo.At
+		b.mu.Unlock()
+		_ = b.emitDelta(b.ctx, core.ReadReceipt{Thread: thread, User: reader, UpTo: echo.At})
 	})
+}
+
+// sleep waits for d, or returns false once Close is called.
+func (b *Backend) sleep(d time.Duration) bool {
+	select {
+	case <-time.After(d):
+		return true
+	case <-b.ctx.Done():
+		return false
+	}
 }
 
 // MarkRead clears the thread's unread flag.
@@ -318,30 +347,24 @@ func (b *Backend) incoming() (core.Message, error) {
 	sender := t.Members[b.rng.IntN(len(t.Members))].ID
 	text := lines[b.rng.IntN(len(lines))]
 	b.mu.Unlock()
-	return b.addMessage(t.ID, sender, text, "")
+	return b.addMessage(core.Message{Thread: t.ID, Sender: sender, Text: text})
 }
 
-// addMessage appends a new message to a thread's history.
-func (b *Backend) addMessage(thread core.ThreadID, sender core.UserID, text, otid string) (core.Message, error) {
+// addMessage gives m an ID and time and appends it to its thread's history.
+func (b *Backend) addMessage(m core.Message) (core.Message, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	t, err := b.threadLocked(thread)
+	t, err := b.threadLocked(m.Thread)
 	if err != nil {
 		return core.Message{}, err
 	}
 	b.nextMID++
-	m := core.Message{
-		ID:          core.MessageID(fmt.Sprintf("mid.$fakelive.%d", b.nextMID)),
-		Thread:      thread,
-		Sender:      sender,
-		At:          b.opts.Now(),
-		Text:        text,
-		ContentType: contentText,
-		OTID:        otid,
-	}
+	m.ID = core.MessageID(fmt.Sprintf("mid.$fakelive.%d", b.nextMID))
+	m.At = b.opts.Now()
+	m.ContentType = contentText
 	t.history = append(t.history, m)
 	t.LastActivity = m.At
-	if sender != me.ID {
+	if m.Sender != me.ID {
 		t.Unread = true
 	}
 	return m, nil

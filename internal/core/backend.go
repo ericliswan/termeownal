@@ -37,10 +37,11 @@ type Backend interface {
 	// NewOTID returns a fresh offline threading ID for Send.
 	NewOTID() string
 
-	// Send sends text. Success means the service accepted it; the message
-	// counts as sent when its echo arrives as a MessageAdded with the same
-	// OTID. Retrying with the same OTID can't create a duplicate.
-	Send(ctx context.Context, thread ThreadID, text, otid string) error
+	// Send sends text, as a reply to message replyTo unless it is "".
+	// Success means the service accepted it; the message counts as sent when
+	// its echo arrives as a MessageAdded with the same OTID. Retrying with the
+	// same OTID can't create a duplicate.
+	Send(ctx context.Context, thread ThreadID, text, otid string, replyTo MessageID) error
 
 	// MarkRead marks upTo's thread read up to and including upTo.
 	MarkRead(ctx context.Context, upTo Message) error

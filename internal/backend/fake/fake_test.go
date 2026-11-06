@@ -127,7 +127,7 @@ func TestSnapshot(t *testing.T) {
 	if gotMe != me || len(threads) != len(threadSpecs) {
 		t.Fatalf("me = %+v, %d threads", gotMe, len(threads))
 	}
-	var groups, unread int
+	var groups, unread, replies int
 	for i, th := range threads {
 		if i > 0 && th.LastActivity.After(threads[i-1].LastActivity) {
 			t.Errorf("thread %d is newer than the one before it", i)
@@ -150,10 +150,16 @@ func TestSnapshot(t *testing.T) {
 			if m.Thread != th.ID {
 				t.Errorf("message %s has thread %d, want %d", m.ID, m.Thread, th.ID)
 			}
+			if m.ReplyTo.ID != "" {
+				replies++
+			}
+		}
+		if len(th.ReadUpTo) != len(th.Members) {
+			t.Errorf("thread %d: read positions %v for %d members", th.ID, th.ReadUpTo, len(th.Members))
 		}
 	}
-	if groups == 0 || unread == 0 {
-		t.Errorf("%d groups, %d unread; want some of each", groups, unread)
+	if groups == 0 || unread == 0 || replies == 0 {
+		t.Errorf("%d groups, %d unread, %d replies; want some of each", groups, unread, replies)
 	}
 
 	_, again, _ := newBackend(t, Options{}).Snapshot(t.Context())
@@ -207,7 +213,7 @@ func TestSendEchoesOnce(t *testing.T) {
 		t.Fatal("NewOTID repeated")
 	}
 	for range 3 { // retries with the same OTID
-		if err := b.Send(t.Context(), th, "hello", otid); err != nil {
+		if err := b.Send(t.Context(), th, "hello", otid, ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -228,8 +234,48 @@ func TestSendEchoesOnce(t *testing.T) {
 	if page[0].ID != added.Message.ID {
 		t.Error("sent message missing from history")
 	}
-	if err := b.Send(t.Context(), 12345, "hi", b.NewOTID()); err == nil {
+	if err := b.Send(t.Context(), 12345, "hi", b.NewOTID(), ""); err == nil {
 		t.Error("send to unknown thread succeeded")
+	}
+}
+
+func TestSendReply(t *testing.T) {
+	b := newBackend(t, Options{})
+	_, threads, _ := b.Snapshot(t.Context())
+	th := threads[0]
+	to := th.Messages[len(th.Messages)-1]
+	if err := b.Send(t.Context(), th.ID, "re", b.NewOTID(), to.ID); err != nil {
+		t.Fatal(err)
+	}
+	added := next(t, b).(core.MessageAdded)
+	want := core.Quote{ID: to.ID, Sender: to.Sender, Text: to.Text, ContentType: to.ContentType}
+	if added.Message.ReplyTo != want {
+		t.Errorf("echo replies to %+v, want %+v", added.Message.ReplyTo, want)
+	}
+	if err := b.Send(t.Context(), th.ID, "re", b.NewOTID(), "mid.nope"); err == nil {
+		t.Error("reply to an unknown message accepted")
+	}
+}
+
+func TestReadAfter(t *testing.T) {
+	b := newBackend(t, Options{ReadAfter: time.Millisecond})
+	_, threads, _ := b.Snapshot(t.Context())
+	th := threads[0]
+	if err := b.Send(t.Context(), th.ID, "hello", b.NewOTID(), ""); err != nil {
+		t.Fatal(err)
+	}
+	echo := next(t, b).(core.MessageAdded).Message
+	next(t, b) // its SeqAdvanced
+	want := core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: echo.At}
+	if got := next(t, b); got != want {
+		t.Fatalf("after the echo: %+v, want %+v", got, want)
+	}
+	if seq, ok := next(t, b).(core.SeqAdvanced); !ok || seq.SeqID != 502 {
+		t.Fatalf("after the receipt: %+v", seq)
+	}
+	_, threads, _ = b.Snapshot(t.Context())
+	if got := threads[0].ReadUpTo[want.User]; !got.Equal(echo.At) {
+		t.Errorf("snapshot has %v read up to %v, want %v", want.User, got, echo.At)
 	}
 }
 
@@ -240,7 +286,7 @@ func TestSeqIDsFollowTheirDeltas(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for i := range 20 {
-		wg.Go(func() { _ = b.Send(t.Context(), threads[i%len(threads)].ID, "hi", b.NewOTID()) })
+		wg.Go(func() { _ = b.Send(t.Context(), threads[i%len(threads)].ID, "hi", b.NewOTID(), "") })
 	}
 	wg.Wait()
 
@@ -311,7 +357,7 @@ func TestCloseWhileBlocked(t *testing.T) {
 	go func() { done <- b.Connect(t.Context()) }()
 	_, threads, _ := b.Snapshot(t.Context())
 	for range queueSize {
-		_ = b.Send(t.Context(), threads[0].ID, "hi", b.NewOTID())
+		_ = b.Send(t.Context(), threads[0].ID, "hi", b.NewOTID(), "")
 	}
 	time.Sleep(20 * time.Millisecond) // let the queue fill
 
@@ -327,7 +373,7 @@ func TestCloseWhileBlocked(t *testing.T) {
 	if n != queueSize {
 		t.Errorf("drained %d events, want a full queue of %d", n, queueSize)
 	}
-	if err := b.Send(t.Context(), threads[0].ID, "hi", b.NewOTID()); !errors.Is(err, errClosed) {
+	if err := b.Send(t.Context(), threads[0].ID, "hi", b.NewOTID(), ""); !errors.Is(err, errClosed) {
 		t.Errorf("Send after Close = %v", err)
 	}
 }

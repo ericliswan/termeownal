@@ -20,6 +20,7 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
@@ -74,12 +75,17 @@ func convertThread(t *slidetypes.ThreadInfo, me core.UserID, log zerolog.Logger)
 	if !slices.Contains(knownSubtypes, t.ThreadSubtype) {
 		out.Title += " [" + string(t.ThreadSubtype) + "]"
 	}
-	// Read if my read receipt reaches the last activity, as upstream decides.
 	for _, rr := range t.SlideReadReceipts {
-		if core.UserID(rr.ParticipantFBID) == me {
-			out.Unread = rr.WatermarkTimestampMS.Before(out.LastActivity)
-			break
+		who, upTo := core.UserID(rr.ParticipantFBID), rr.WatermarkTimestampMS.Time
+		if who == me {
+			// Read if my receipt reaches the last activity, as upstream decides.
+			out.Unread = upTo.Before(out.LastActivity)
+			continue
 		}
+		if out.ReadUpTo == nil {
+			out.ReadUpTo = map[core.UserID]time.Time{}
+		}
+		out.ReadUpTo[who] = upTo
 	}
 	if t.MarkedAsUnread {
 		out.Unread = true
@@ -115,7 +121,7 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 		return core.Message{}, false
 	}
 	log.Debug().Str("content_type", m.ContentType).Msg("message")
-	return core.Message{
+	out := core.Message{
 		ID:          core.MessageID(id),
 		Thread:      key,
 		Sender:      core.UserID(m.SenderFBID),
@@ -123,5 +129,14 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 		Text:        m.TextBody,
 		ContentType: m.ContentType,
 		OTID:        m.OfflineThreadingID,
-	}, true
+	}
+	if m.RepliedToMessageID != "" {
+		out.ReplyTo.ID = core.MessageID(m.RepliedToMessageID)
+		if q := m.RepliedToMessage; q != nil {
+			out.ReplyTo.Sender = core.UserID(q.SenderFBID)
+			out.ReplyTo.Text = q.TextBody
+			out.ReplyTo.ContentType = q.ContentType
+		}
+	}
+	return out, true
 }

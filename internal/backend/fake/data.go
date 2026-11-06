@@ -154,9 +154,26 @@ func seedData(now time.Time) []*seedThread {
 				at = at.Add(-time.Duration(rng.IntN(36)) * time.Hour)
 			}
 		}
+		// No rng calls from here: more would change the messages above.
+		for k := 3; k < len(t.history); k++ {
+			m, to := &t.history[k], t.history[k-3]
+			if k%23 == 22 && m.ContentType == contentText && to.ContentType != contentReactionLog {
+				m.ReplyTo = quote(to)
+			}
+		}
+		// Member j has read all but the last j messages.
+		t.ReadUpTo = make(map[core.UserID]time.Time)
+		for j, u := range t.Members {
+			t.ReadUpTo[u.ID] = t.history[max(0, len(t.history)-1-j)].At
+		}
 		threads = append(threads, t)
 	}
 	return threads
+}
+
+// quote is how a reply quotes m.
+func quote(m core.Message) core.Quote {
+	return core.Quote{ID: m.ID, Sender: m.Sender, Text: m.Text, ContentType: m.ContentType}
 }
 
 // defaultTitle names an untitled thread after its members.
