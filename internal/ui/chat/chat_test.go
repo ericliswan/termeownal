@@ -74,6 +74,24 @@ func TestSeenLine(t *testing.T) {
 	}
 }
 
+func TestTypingLine(t *testing.T) {
+	ann, bob := core.User{ID: 2, Name: "Ann Lee"}, core.User{ID: 3, Username: "bob"}
+	group := core.Thread{Members: []core.User{ann, bob}}
+	for _, tc := range []struct {
+		typing []core.UserID
+		want   string
+	}{
+		{nil, ""},
+		{[]core.UserID{9}, ""}, // not a member
+		{[]core.UserID{2}, "Ann is typing…"},
+		{[]core.UserID{3, 2}, "Ann, bob are typing…"},
+	} {
+		if got := typingLine(group, tc.typing); got != tc.want {
+			t.Errorf("typingLine(%v) = %q, want %q", tc.typing, got, tc.want)
+		}
+	}
+}
+
 func TestQuoteText(t *testing.T) {
 	me := core.User{ID: 1}
 	ann := core.User{ID: 2, Name: "Ann Lee"}
@@ -112,7 +130,7 @@ func TestSelectionMovesAndScrolls(t *testing.T) {
 
 	m := New(func() time.Time { return at })
 	m.SetSize(40, 10)
-	m.Show(core.Thread{ID: 1, Members: []core.User{ann}}, core.User{ID: 1}, msgs, false, false)
+	m.Show(core.Thread{ID: 1, Members: []core.User{ann}}, core.User{ID: 1}, msgs, false, false, nil)
 	if _, ok := m.Selected(); ok {
 		t.Fatal("selection while unfocused")
 	}
