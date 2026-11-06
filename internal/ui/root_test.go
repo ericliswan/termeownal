@@ -242,6 +242,11 @@ func TestScreens(t *testing.T) {
 		h.press("j", "enter", "shift+tab", "k", "r")
 		golden.RequireEqual(t, h.screen())
 	})
+	t.Run("emoji", func(t *testing.T) {
+		h := newHarness(t, 100, 30)
+		h.press("j", "enter", "love :hea")
+		golden.RequireEqual(t, h.screen())
+	})
 	t.Run("help", func(t *testing.T) {
 		h := newHarness(t, 100, 30)
 		h.press("?")
@@ -305,6 +310,34 @@ func TestReplyToSelectedMessage(t *testing.T) {
 	}
 	if !strings.Contains(h.screen(), "↪ ") {
 		t.Fatalf("reply shown without its quote:\n%s", h.screen())
+	}
+}
+
+func TestEmojiSuggestionsTakeTabAndEsc(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "love :hea")
+	if !strings.Contains(h.screen(), ":heart:") {
+		t.Fatalf("no emoji suggestions:\n%s", h.screen())
+	}
+	id, _ := h.m.chat.Thread()
+	if msgs := h.m.threads[id].Messages; !strings.Contains(h.screen(), msgs[len(msgs)-1].Text) {
+		t.Fatalf("the taller composer hid the newest message:\n%s", h.screen())
+	}
+	h.press("esc")
+	if h.m.focus != paneComposer || strings.Contains(h.screen(), ":heart:") {
+		t.Fatalf("esc: focus %d; want the composer, suggestions closed\n%s", h.m.focus, h.screen())
+	}
+	h.press("r", "tab")
+	if h.m.focus != paneComposer {
+		t.Fatalf("tab with suggestions moved focus to %d", h.m.focus)
+	}
+	h.press("enter")
+	if got := h.act.sent[len(h.act.sent)-1].Text; got != "love ❤️" {
+		t.Fatalf("sent %q, want %q", got, "love ❤️")
+	}
+	h.press("tab")
+	if h.m.focus == paneComposer {
+		t.Fatal("tab without suggestions kept the focus")
 	}
 }
 

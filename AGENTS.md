@@ -299,6 +299,7 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 - Layout: thread list (left), chat view (right), composer (bottom right), status bar.
 - Components: `bubbles/list` (threads), `bubbles/viewport` + custom wrapping (chat), `bubbles/textarea` (composer — **remap** Enter to send, Alt+Enter newline; the default inserts a newline on Enter).
 - Keys: `Tab`/`Shift+Tab` focus · `j`/`k`/arrows move (in the messages pane, select a message) · `Enter` open/send · `g`/`G` top/bottom · `PgUp` at top loads older · `/` filter · `Ctrl+N` new DM · `r` reply (or retry failed) · `e` react · `o` open media · `Esc` cancel · `?` help · `Ctrl+C` quit.
+- Emoji shortcodes in the composer, as in Discord: `:heart:` becomes ❤️ when the closing `:` is typed; after `:` and two letters, up to 5 matches show above the text (`↑`/`↓` move, `Tab`/`Enter` pick, `Esc` closes). The colon must start a word (`10:30` isn't one). Names come from `internal/ui/emoji/table.go`, generated from GitHub's gemoji (MIT) with `go generate ./internal/ui/emoji`.
 - Mark read only when the thread is visible and the terminal is focused (`tea.WithReportFocus`); no focus reporting → assume focused.
 - Unread: bold + `●`. Muted: dimmed. Day separators; group consecutive messages by sender.
 - "Seen" (1:1), "Seen by" + names or "Seen by everyone" (group) under the user's message only when it's the newest in the thread; a reply already shows the other side read on. The UI keeps the highest watermark per member, like the store.

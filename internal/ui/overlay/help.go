@@ -30,6 +30,7 @@ var helpKeys = [][2]string{
 	{"j k ↑ ↓", "move; select a message"},
 	{"Enter", "open thread / send"},
 	{"Alt+Enter", "new line in message"},
+	{":heart:", "emoji; after :he, Tab or Enter picks"},
 	{"g / G", "top / bottom"},
 	{"PgUp", "page up; at the top, load older"},
 	{"r", "reply to the message, or resend if it failed"},
