@@ -54,6 +54,9 @@ type Options struct {
 	// ReadAfter is how long after its echo a sent message is read by the
 	// thread's first member. Zero means it never is.
 	ReadAfter time.Duration
+	// TypingFor is how long someone is shown typing before each incoming
+	// message. Zero shows no typing.
+	TypingFor time.Duration
 }
 
 // Backend is a fake core.Backend. It is safe for concurrent use.
@@ -224,6 +227,14 @@ func (b *Backend) MarkRead(_ context.Context, upTo core.Message) error {
 	return nil
 }
 
+// Typing checks the thread exists; nobody sees it.
+func (b *Backend) Typing(_ context.Context, thread core.ThreadID, _ bool) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	_, err := b.threadLocked(thread)
+	return err
+}
+
 // Connect reports Connected, then delivers incoming messages every
 // IncomingEvery until ctx is cancelled or Close is called.
 func (b *Backend) Connect(ctx context.Context) error {
@@ -254,7 +265,18 @@ func (b *Backend) Connect(ctx context.Context) error {
 	for {
 		select {
 		case <-tick.C:
-			m, err := b.incoming()
+			m := b.pick()
+			if b.opts.TypingFor > 0 {
+				if b.emit(ctx, core.Typing{Thread: m.Thread, User: m.Sender, Active: true}) != nil {
+					return b.connectErr(ctx)
+				}
+				select {
+				case <-time.After(b.opts.TypingFor):
+				case <-ctx.Done():
+					return b.connectErr(ctx)
+				}
+			}
+			m, err := b.addMessage(m)
 			if err == nil {
 				err = b.emitDelta(ctx, core.MessageAdded{Message: m})
 			}
@@ -340,14 +362,14 @@ func (b *Backend) goLocked(f func()) error {
 	return nil
 }
 
-// incoming adds a message from someone else to a random thread.
-func (b *Backend) incoming() (core.Message, error) {
+// pick makes up a message from someone else in a random thread.
+func (b *Backend) pick() core.Message {
 	b.mu.Lock()
+	defer b.mu.Unlock()
 	t := b.threads[b.rng.IntN(len(b.threads))]
 	sender := t.Members[b.rng.IntN(len(t.Members))].ID
 	text := lines[b.rng.IntN(len(lines))]
-	b.mu.Unlock()
-	return b.addMessage(core.Message{Thread: t.ID, Sender: sender, Text: text})
+	return core.Message{Thread: t.ID, Sender: sender, Text: text}
 }
 
 // addMessage gives m an ID and time and appends it to its thread's history.
