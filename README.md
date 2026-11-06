@@ -26,7 +26,7 @@ Instagram DMs in your terminal. Log in once, see your threads, read history, sen
 
 termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/meta/tree/main/pkg/instameow), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. It doesn't run the bridge, Matrix or any server.
 
-> **Status: early development.** termeownal works with a real account: it loads your threads and history, and sends and receives messages live. Replies, reactions, media and more come next; see [Features](#features). Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
+> **Status: early development.** termeownal works with a real account: it loads your threads and history, and sends and receives messages live. Reactions, media and more come next; see [Features](#features). Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
 
 ## Preview
 
