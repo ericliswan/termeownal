@@ -24,6 +24,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"termeownal/internal/ui/theme"
 )
@@ -32,8 +33,11 @@ import (
 type SubmitMsg struct{ Text string }
 
 // Model wraps a textarea where Enter sends and Alt+Enter starts a new line.
+// A reply shows what it replies to above the text.
 type Model struct {
-	ta textarea.Model
+	ta    textarea.Model
+	width int
+	reply string
 }
 
 // New returns an empty, unfocused composer.
@@ -63,10 +67,19 @@ func New() Model {
 }
 
 // SetWidth sets the inner width.
-func (m *Model) SetWidth(w int) { m.ta.SetWidth(w) }
+func (m *Model) SetWidth(w int) { m.width = w; m.ta.SetWidth(w) }
+
+// SetReply shows quote, one line, as the message replied to; "" shows none.
+// It changes Height.
+func (m *Model) SetReply(quote string) { m.reply = quote }
 
 // Height is the inner height.
-func (m Model) Height() int { return m.ta.Height() }
+func (m Model) Height() int {
+	if m.reply != "" {
+		return m.ta.Height() + 1
+	}
+	return m.ta.Height()
+}
 
 // Focus gives the composer keyboard focus.
 func (m *Model) Focus() tea.Cmd { return m.ta.Focus() }
@@ -90,5 +103,11 @@ func (m Model) Update(msg tea.Msg) (Model, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the text box.
-func (m Model) View() string { return m.ta.View() }
+// View renders the reply line, if any, and the text box.
+func (m Model) View() string {
+	if m.reply == "" {
+		return m.ta.View()
+	}
+	line := ansi.Truncate("↪ Replying to "+m.reply, max(m.width-lipgloss.Width(" · esc cancels"), 0), "…")
+	return theme.Dim.Render(line+" · esc cancels") + "\n" + m.ta.View()
+}

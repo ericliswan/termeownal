@@ -3,24 +3,24 @@
 ┃▌   haha yes                   ┃│                                                                 │
 ┃                               ┃│                                                                 │
 ┃  ● COMP2003 project      12:23┃│                                                                 │
-┃    wait what        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓                      │
-┃                     ┃                                                     ┃                      │
-┃    Tom              ┃  Keys                                               ┃                      │
-┃    ok               ┃                                                     ┃                      │
-┃                     ┃  Tab / Shift+Tab   move focus                       ┃                      │
-┃    James, Ben, Chloe┃  j k ↑ ↓           move / scroll                    ┃                      │
-┃    ok               ┃  Enter             open thread / send               ┃Enter                 │
-┃                     ┃  Alt+Enter         new line in message              ┃                      │
-┃  ● Aisha            ┃  g / G             top / bottom                     ┃                      │
-┃    😭😭😭           ┃  PgUp              page up; at the top, load older  ┃                      │
-┃                     ┃  r                 resend failed messages           ┃                      │
-┃    Dan              ┃  Esc               back to the thread list          ┃                      │
-┃    You: brb         ┃  ?                 this help                        ┃                      │
-┃                     ┃  Ctrl+C            quit                             ┃                      │
-┃    Film Society 🎬  ┃                                                     ┃                      │
-┃    ok               ┃  Esc or ? to close                                  ┃                      │
-┃                     ┃                                                     ┃                      │
-┃    ゆき             ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛                      │
+┃    wait what  ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓               │
+┃               ┃                                                                  ┃               │
+┃    Tom        ┃  Keys                                                            ┃               │
+┃    ok         ┃                                                                  ┃               │
+┃               ┃  Tab / Shift+Tab   move focus                                    ┃               │
+┃    James, Ben,┃  j k ↑ ↓           move; select a message                        ┃               │
+┃    ok         ┃  Enter             open thread / send                            ┃               │
+┃               ┃  Alt+Enter         new line in message                           ┃               │
+┃  ● Aisha      ┃  g / G             top / bottom                                  ┃               │
+┃    😭😭😭     ┃  PgUp              page up; at the top, load older               ┃               │
+┃               ┃  r                 reply to the message, or resend if it failed  ┃               │
+┃    Dan        ┃  Esc               cancel the reply, or back to the thread list  ┃               │
+┃    You: brb   ┃  ?                 this help                                     ┃               │
+┃               ┃  Ctrl+C            quit                                          ┃               │
+┃    Film Societ┃                                                                  ┃               │
+┃    ok         ┃  Esc or ? to close                                               ┃               │
+┃               ┃                                                                  ┃               │
+┃    ゆき       ┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛               │
 ┃    You: slides are here https…┃╰─────────────────────────────────────────────────────────────────╯
 ┃                               ┃╭─────────────────────────────────────────────────────────────────╮
 ┃    Lucas                   Sun┃│> Message…                                                       │

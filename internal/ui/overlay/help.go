@@ -27,13 +27,13 @@ import (
 
 var helpKeys = [][2]string{
 	{"Tab / Shift+Tab", "move focus"},
-	{"j k ↑ ↓", "move / scroll"},
+	{"j k ↑ ↓", "move; select a message"},
 	{"Enter", "open thread / send"},
 	{"Alt+Enter", "new line in message"},
 	{"g / G", "top / bottom"},
 	{"PgUp", "page up; at the top, load older"},
-	{"r", "resend failed messages"},
-	{"Esc", "back to the thread list"},
+	{"r", "reply to the message, or resend if it failed"},
+	{"Esc", "cancel the reply, or back to the thread list"},
 	{"?", "this help"},
 	{"Ctrl+C", "quit"},
 }

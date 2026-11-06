@@ -128,6 +128,9 @@ type Model struct {
 	chat     chat.Model
 	composer composer.Model
 	focus    pane
+	// reply is the message the composer's next message replies to; its ID
+	// is empty for none.
+	reply core.Quote
 
 	// outbox holds local messages to send, oldest first; the first is being
 	// sent. One at a time, so they arrive in order.
@@ -189,7 +192,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		otid := m.act.NewOTID()
 		local := core.Message{ID: core.MessageID("local:" + otid), Thread: id, Sender: m.me.ID, At: m.now(),
-			Text: msg.Text, OTID: otid, State: core.Sending}
+			Text: msg.Text, OTID: otid, State: core.Sending, ReplyTo: m.reply}
+		m.setReply(core.Quote{})
 		m.addMessage(local)
 		m.refresh()
 		return m, m.enqueue(local)
@@ -298,6 +302,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			step = len(order) - 1
 		}
 		return m, m.setFocus(order[(slices.Index(order, m.focus)+step)%len(order)])
+	case s == "esc" && m.reply.ID != "":
+		m.setReply(core.Quote{})
+		return m, nil
 	case s == "esc":
 		return m, m.setFocus(paneThreads)
 	case s == "?" && m.focus != paneComposer:
@@ -310,6 +317,9 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case paneThreads:
 		if s == "enter" {
 			if id, ok := m.list.Selected(); ok {
+				if cur, _ := m.chat.Thread(); cur != id {
+					m.setReply(core.Quote{})
+				}
 				return m, tea.Batch(m.open(id), m.setFocus(paneComposer))
 			}
 			return m, nil
@@ -321,7 +331,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case ok && s == "pgup" && m.chat.AtTop():
 			return m, m.loadOlder(id)
 		case ok && s == "r":
-			return m, m.retry(id)
+			return m, m.replyOrRetry(id)
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
@@ -332,6 +342,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) setFocus(p pane) tea.Cmd {
 	m.focus = p
+	m.chat.SetFocused(p == paneChat)
 	if p == paneComposer {
 		return m.composer.Focus()
 	}
@@ -401,6 +412,36 @@ func (m *Model) enqueue(msgs ...core.Message) tea.Cmd {
 		return nil
 	}
 	return m.act.Send(m.outbox[0])
+}
+
+// replyOrRetry acts on the selected message: a failed one is sent again,
+// with the rest of the thread's failed messages; a sent one becomes the
+// message the composer replies to.
+func (m *Model) replyOrRetry(id core.ThreadID) tea.Cmd {
+	sel, ok := m.chat.Selected()
+	switch {
+	case !ok:
+		return nil
+	case sel.State == core.SendFailed:
+		return m.retry(id)
+	case sel.State == core.Sent:
+		m.setReply(core.Quote{ID: sel.ID, Sender: sel.Sender, Text: sel.Text, ContentType: sel.ContentType})
+		return m.setFocus(paneComposer)
+	}
+	return nil // still sending: it has no ID to reply to yet
+}
+
+// setReply sets the message the composer replies to, and resizes the
+// composer to show it.
+func (m *Model) setReply(q core.Quote) {
+	m.reply = q
+	label := ""
+	if id, ok := m.chat.Thread(); ok && q.ID != "" {
+		st := m.threads[id]
+		label = chat.QuoteText(st.Thread, m.me, st.Messages, q)
+	}
+	m.composer.SetReply(label)
+	m.layout()
 }
 
 // retry sends a thread's failed messages again, oldest first, with the same
