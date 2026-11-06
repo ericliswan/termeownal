@@ -216,14 +216,14 @@ Plan:
 | `Snapshot(ctx)` | `me User`, `[]Thread`, error | Wraps `LoadIndex` / `GetMailbox`; threads carry their newest messages. Runs on the pump goroutine, so it must not wait for `Events` to be read |
 | `History(ctx, thread, before, n)` | `[]Message` (oldest first), more bool, error | `PaginateMessages` |
 | `NewOTID()` | string | `methods.GenerateEpochID()`; the app needs the OTID before sending (§8) |
-| `Send(ctx, thread, text, otid)` | error | `SendMessage` |
+| `Send(ctx, thread, text, otid, replyTo)` | error | `SendMessage` |
 | `MarkRead(ctx, thread, upTo)` | error | `MarkRead` + `MarkReadValidation` |
 | `Connect(ctx)` | error | blocks while upstream's socket loop reconnects on its own |
 | `Events()` | `<-chan core.Event` | normalized events; closed by `Close` |
 | `ExportAuth()` | `AuthData`, error | cookies + `DumpState()`, for saving after `SessionChanged` |
 | `Close()` | | |
 
-`core.ThreadID` is the thread key; short and long IDs stay in the adapter. The seq ID isn't in `ExportAuth`: the pump saves it from `SeqAdvanced`, so fresh cookies can never be saved with a seq ID ahead of the store. Phase 3 adds `SearchUsers`, `StartDM` and parameters for replies; `MoreThreads` (`PaginateMailbox`) comes when the thread list needs it.
+`core.ThreadID` is the thread key; short and long IDs stay in the adapter. The seq ID isn't in `ExportAuth`: the pump saves it from `SeqAdvanced`, so fresh cookies can never be saved with a seq ID ahead of the store. Phase 3 adds `SearchUsers` and `StartDM`, and gives `Send` the message replied to; `MoreThreads` (`PaginateMailbox`) comes when the thread list needs it.
 
 Login lives in a separate `core.Authenticator` interface because it's a multi-step, interactive flow (§6): `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
 
@@ -420,8 +420,8 @@ SQLite file `cache.db` in termeownal's data directory. Paths: use `adrg/xdg` (or
 | `account` | `fbid` PK, `igid`, `username`, `display_name` (seq ID lives in the session file, §6.3) |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
 | `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `history_complete` |
-| `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
-| `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
+| `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_ms` |
+| `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `reply_sender_fbid`, `reply_text`, `reply_content_type`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
 Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_activity_ms)`. Migration 1 creates only the columns Phase 1 uses; each later phase adds its columns, and the `reactions` table, in a new migration. A thread's cached messages are kept contiguous (a newest page that doesn't reach the cache drops the older cached ones), so the oldest cached message is the paging cursor. Short and long thread IDs aren't stored: the adapter keeps them in memory (§4.5).

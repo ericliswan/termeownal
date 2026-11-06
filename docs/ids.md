@@ -68,7 +68,7 @@ Every delta has `__typename`, `uq_seq_id` and `thread_fbid` (the short ID). In a
 | `SlideUQPPEditMessage` | short | `message_id`, new text |
 | `SlideUQPPDeleteMessage` | short | `message_id` |
 | `SlideUQPPMarkRead` | short | `read_timestamp_ms` (the viewer read the thread on another device) |
-| `SlideUQPPReadReceipt` | short | `participant_fbid` = FBID; `watermark_timestamp_ms` |
+| `SlideUQPPReadReceipt` | short | `participant_fbid` = FBID; `watermark_timestamp_ms`. The viewer's own receipt means they read the thread on another device, like `MarkRead`; termeownal treats it so, as upstream does |
 | `SlideUQPPThreadName` | short | `UpdateThreadNameEvent` |
 | `SlideUQPPCreate1To1Thread`, `SlideUQPPUserReachabilityStatus`, `SlideUQPPNotYetImplementedMutation` | **empty** | `IgnoredEvent`, no IDs |
 | `TypingNotification` (not a delta) | **long** | `sender_id` = **IGID**; `activity_status` 1 = typing, 0 = stopped |
@@ -119,6 +119,7 @@ All three paths in AGENTS §6.5 worked:
 - **Message requests:** `PaginateMailbox` for folder `PENDING` returned nothing because no request existed. Revisit in Phase 3 with an account the test account doesn't follow.
 - Outgoing typing, reactions, edits and unsends (Phase 3).
 - Edits, unsends and read receipts in a 1:1.
+- Replies: `replied_to_message_id` and the embedded `replied_to_message` are read from upstream's types, not seen in a recorded payload. Is the ID the `mid.$…` form, and is the copy missing once the original is unsent? Sending sets only `ReplyToMessageID`, as upstream does.
 - `FetchThreadID` with a group key.
 - Instagram's message length limit (ROADMAP §18).
 

@@ -122,9 +122,9 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
   - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
-  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, replies, reactions, edits, unsends, typing).
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends, typing).
   - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
-  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ReadReceipt`, `ThreadRemoved`, `Typing`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`), then `MessageEdited`, `MessageDeleted`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`, `Typing`.
   - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
@@ -289,8 +289,8 @@ SQLite via `modernc.org/sqlite`, numbered migrations, `cache.db` in the data dir
 | `account` | `fbid` PK, `igid`, `username`, `display_name` |
 | `users` | `fbid` PK, `igid`, `username`, `full_name`, `avatar_url`, `updated_at` |
 | `threads` | `thread_key` PK, `title`, `is_group`, `last_activity_ms`, `unread`, `marked_unread`, `muted`, `pinned`, `folder`, `image_url`, `history_complete` |
-| `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_msg_id` |
-| `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
+| `thread_members` | `thread_key`, `user_fbid`, `nickname`, `is_admin`, `read_up_to_ms` (the member's read watermark; only ever raised) |
+| `messages` | `id` PK, `thread_key`, `sender_fbid`, `ts_ms`, `kind`, `content_type`, `text`, `snippet`, `reply_to_id`, `reply_sender_fbid`, `reply_text`, `reply_content_type` (a copy of the quoted message, which may be older than the cache), `edited_at`, `deleted`, `forwarded`, `otid`, `send_state` |
 | `reactions` | `message_id`, `user_fbid`, `emoji`, `log_message_id` (removals can arrive with sender 0; `docs/ids.md` §4) |
 
 Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_activity_ms)`. Migration 1 creates only the columns Phase 1 uses; each later phase adds its columns, and the `reactions` table, in a new migration. A thread's cached messages are kept contiguous (a newest page that doesn't reach the cache drops the older cached ones), so the oldest cached message is the paging cursor. Secrets never go in SQLite. Message text in the cache is plaintext; that's documented, not a bug.
