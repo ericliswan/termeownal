@@ -109,7 +109,7 @@ The bridge has two halves: an Instagram half (`instameow`) and a Matrix half (`i
 | `Settings` | HTTP client settings (see how `igconnector.getInstaClient` fills it) |
 | `EventHandler` | the adapter's handler (§7) |
 | `SeqID`, `SeqIDTS` | last saved values, so the socket resumes instead of starting over |
-| `DisableTyping` | from config |
+| `DisableTyping` | unset: it would also stop incoming typing, so `send_typing = false` is applied in app instead |
 | `NativeSession` | only for the Android login flow (later) |
 
 Also: `LoadState(raw)` / `DumpState()` to save and restore reconnection state, `SetSeqID`, `GetOwnFBID`, `GetCookies`, `IsAuthenticated`, `SetLogger`, `SetEventHandler`.
@@ -125,7 +125,7 @@ Also: `LoadState(raw)` / `DumpState()` to save and restore reconnection state, `
 | History | `PaginateMessages(&PaginateMessagesRequest{ThreadID, OlderThanMessageID, FirstN, …})` — `ThreadID` is the thread's **`ThreadInfo.ID`** (§4.5) | 1 |
 | Send text | `SendMessage(&SendTextRequest{IGThreadIGID, Text, OfflineThreadingID, ReplyToMessageID, …})` — `IGThreadIGID` is the short ID **`ThreadInfo.ID`** (the long ID also works); first message to a new user: `RecipientIGIDs: []string{userFBID}` and no `IGThreadIGID` | 1 |
 | Mark read | `MarkRead(&MarkReadRequest{Metadata{IGThreadIGID}, Data{MessageID, …}})`, then `MarkReadValidation` with the same request (upstream calls both) | 1 |
-| Typing out | `SetTyping(ctx, shortID, typing)` — `ThreadInfo.ID` | 3 |
+| Typing out | `SetTyping(ctx, shortID, typing)` — `ThreadInfo.ID`; fails before `Connect` | 3 |
 | Search people | `SearchUsers(ctx, query)` | 3 |
 | New DM target | `GetUserForNewDM(ctx, fbid)`, `GetProfile(ctx, igid)` | 3 |
 | Reactions | `SendReaction(&CreateReactionRequest{…})` | 3 |
@@ -218,6 +218,7 @@ Plan:
 | `NewOTID()` | string | `methods.GenerateEpochID()`; the app needs the OTID before sending (§8) |
 | `Send(ctx, thread, text, otid, replyTo)` | error | `SendMessage` |
 | `MarkRead(ctx, thread, upTo)` | error | `MarkRead` + `MarkReadValidation` |
+| `Typing(ctx, thread, active)` | error | `SetTyping` (Phase 3) |
 | `Connect(ctx)` | error | blocks while upstream's socket loop reconnects on its own |
 | `Events()` | `<-chan core.Event` | normalized events; closed by `Close` |
 | `ExportAuth()` | `AuthData`, error | cookies + `DumpState()`, for saving after `SessionChanged` |
@@ -559,7 +560,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 
 ### Phase 3 — Real messenger feel · 1–2 weeks
 - [x] Replies (render + `r`).
-- [ ] Typing in/out (configurable).
+- [x] Typing in/out (configurable).
 - [x] Read receipts per member; "Seen".
 - [x] Emoji shortcodes in the composer (`:heart:`, suggestions after `:he`), from a table generated from gemoji (MIT).
 - [ ] Reactions shown + send with `e` (small emoji picker, searchable by shortcode).
@@ -678,7 +679,7 @@ termeownal/
 
 - [ ] Final name?
 - [ ] Should message requests show in the main list (dimmed) or a separate tab?
-- [ ] Typing indicators on or off by default (privacy)?
+- [x] Typing indicators on or off by default (privacy)? On; `send_typing = false` stops sending yours, and others' still show.
 - [ ] Mark-as-read behavior: on open, or only after scrolling to bottom?
 - [ ] Encrypt the cache in v1, or document and defer?
 - [ ] Which terminals to officially support for inline images?
