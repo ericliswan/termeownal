@@ -60,6 +60,15 @@ type ReadReceipt struct {
 	UpTo   time.Time
 }
 
+// Typing means member User of Thread started (Active) or stopped typing.
+// Without a stop, it ends a few seconds after the last start. It isn't
+// stored.
+type Typing struct {
+	Thread ThreadID
+	User   UserID
+	Active bool
+}
+
 // ThreadUpdated carries a thread's current details. It comes before the
 // first event for a thread the backend hadn't reported yet.
 type ThreadUpdated struct{ Thread Thread }
@@ -80,6 +89,7 @@ func (ResyncNeeded) event()   {}
 func (MessageAdded) event()   {}
 func (ThreadRead) event()     {}
 func (ReadReceipt) event()    {}
+func (Typing) event()         {}
 func (ThreadUpdated) event()  {}
 func (SeqAdvanced) event()    {}
 func (SessionChanged) event() {}
