@@ -178,7 +178,7 @@ func newFake(ctx context.Context) (core.Backend, error) {
 	if err != nil {
 		return nil, err
 	}
-	b := fake.New(fake.Options{IncomingEvery: 15 * time.Second, EchoDelay: 300 * time.Millisecond})
+	b := fake.New(fake.Options{IncomingEvery: 15 * time.Second, EchoDelay: 300 * time.Millisecond, ReadAfter: 2 * time.Second})
 	if err := b.Restore(ctx, core.Session{Auth: step.Result.Auth}); err != nil {
 		return nil, err
 	}

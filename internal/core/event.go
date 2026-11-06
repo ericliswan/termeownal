@@ -52,6 +52,14 @@ type ThreadRead struct {
 	Until  time.Time
 }
 
+// ReadReceipt means member User of Thread has read it up to UpTo. Receipts
+// can arrive late and more than once: keep the latest UpTo.
+type ReadReceipt struct {
+	Thread ThreadID
+	User   UserID
+	UpTo   time.Time
+}
+
 // ThreadUpdated carries a thread's current details. It comes before the
 // first event for a thread the backend hadn't reported yet.
 type ThreadUpdated struct{ Thread Thread }
@@ -71,6 +79,7 @@ func (AuthFailed) event()     {}
 func (ResyncNeeded) event()   {}
 func (MessageAdded) event()   {}
 func (ThreadRead) event()     {}
+func (ReadReceipt) event()    {}
 func (ThreadUpdated) event()  {}
 func (SeqAdvanced) event()    {}
 func (SessionChanged) event() {}

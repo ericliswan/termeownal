@@ -46,8 +46,12 @@ var fixtureThreads = []core.Thread{
 		Unread:       true, // my read receipt is behind the last message
 		Messages: []core.Message{
 			{ID: "mid.$fake1a", Thread: core.ThreadID(alice.ID), Sender: testMe.ID, At: time.UnixMilli(1767225400000), Text: "placeholder one", ContentType: "TEXT", OTID: "7000000000000000001"},
-			{ID: "mid.$fake1c", Thread: core.ThreadID(alice.ID), Sender: alice.ID, At: time.UnixMilli(1767225600000), Text: "placeholder three", ContentType: "TEXT"},
+			{
+				ID: "mid.$fake1c", Thread: core.ThreadID(alice.ID), Sender: alice.ID, At: time.UnixMilli(1767225600000), Text: "placeholder three", ContentType: "TEXT",
+				ReplyTo: core.Quote{ID: "mid.$fake1a", Sender: testMe.ID, Text: "placeholder one", ContentType: "TEXT"},
+			},
 		},
+		ReadUpTo: map[core.UserID]time.Time{alice.ID: time.UnixMilli(1767225600000)},
 	},
 	{
 		ID:           3400000000000002,
@@ -58,6 +62,7 @@ var fixtureThreads = []core.Thread{
 		Messages: []core.Message{
 			{ID: "mid.$fake2a", Thread: 3400000000000002, Sender: bob.ID, At: time.UnixMilli(1767225300000), ContentType: "MEDIA_SHARE"},
 		},
+		ReadUpTo: map[core.UserID]time.Time{bob.ID: time.UnixMilli(1767225300000)},
 	},
 	{
 		ID:           core.ThreadID(carol.ID),
@@ -117,5 +122,13 @@ func TestConvertMessageSkips(t *testing.T) {
 		if _, ok := convertMessage(m, 1, zerolog.Nop()); ok {
 			t.Errorf("%+v converted", m)
 		}
+	}
+}
+
+// A reply to an unsent message carries only the original's ID.
+func TestConvertReplyWithoutCopy(t *testing.T) {
+	got, _ := convertMessage(&slidetypes.Message{ID: "mid.$x", RepliedToMessageID: "mid.$gone"}, 1, zerolog.Nop())
+	if got.ReplyTo != (core.Quote{ID: "mid.$gone"}) {
+		t.Errorf("ReplyTo = %+v", got.ReplyTo)
 	}
 }

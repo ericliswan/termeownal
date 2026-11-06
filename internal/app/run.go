@@ -108,7 +108,7 @@ func (a actions) Send(m core.Message) tea.Cmd {
 		err := a.st.AddMessage(a.ctx, m)
 		if err == nil {
 			ctx, cancel := context.WithTimeout(a.ctx, sendTimeout)
-			err = a.b.Send(ctx, m.Thread, m.Text, m.OTID)
+			err = a.b.Send(ctx, m.Thread, m.Text, m.OTID, m.ReplyTo.ID)
 			cancel()
 		}
 		if err != nil {

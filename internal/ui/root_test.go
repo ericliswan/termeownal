@@ -66,7 +66,7 @@ func (a *backendActions) Send(m core.Message) tea.Cmd {
 		a.sent = append(a.sent, m)
 		err := a.sendErr
 		if err == nil {
-			err = a.b.Send(context.Background(), m.Thread, m.Text, m.OTID)
+			err = a.b.Send(context.Background(), m.Thread, m.Text, m.OTID, m.ReplyTo.ID)
 		}
 		return SentMsg{Message: m, Err: err}
 	}

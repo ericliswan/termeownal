@@ -139,7 +139,7 @@ func connected(rec *recorder) func() bool {
 func send(t *testing.T, b *fake.Backend, n int) {
 	t.Helper()
 	for range n {
-		if err := b.Send(context.Background(), 101, "hi", b.NewOTID()); err != nil {
+		if err := b.Send(context.Background(), 101, "hi", b.NewOTID(), ""); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -294,6 +294,8 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 		core.ThreadUpdated{Thread: th},
 		core.MessageAdded{Message: core.Message{ID: "mid.replayed", Thread: th.ID, Sender: th.Members[0].ID, At: at, Text: "hi"}},
 		core.ThreadRead{Thread: th.ID, Until: at},
+		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: at},
+		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: testNow}, // older, late
 		core.SeqAdvanced{SeqID: 1, At: at},
 	}
 
@@ -310,8 +312,12 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	if !reflect.DeepEqual(cached[0], cached[1]) {
 		t.Error("replaying events changed the cache")
 	}
-	if i := slices.IndexFunc(cached[1], func(t core.Thread) bool { return t.ID == 101 }); cached[1][i].Unread {
+	got := cached[1][slices.IndexFunc(cached[1], func(t core.Thread) bool { return t.ID == 101 })]
+	if got.Unread {
 		t.Error("thread is unread after replaying its read")
+	}
+	if upTo := got.ReadUpTo[th.Members[0].ID]; !upTo.Equal(at) {
+		t.Errorf("member read up to %v, want %v", upTo, at)
 	}
 	if p.failed {
 		t.Error("a write failed")

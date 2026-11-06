@@ -150,6 +150,10 @@ func (b *Backend) handleDelta(ctx context.Context, d *slidetypes.Delta) error {
 		if known {
 			return b.send(ctx, core.ThreadRead{Thread: key, Until: data.ReadTimestampMS.Time})
 		}
+	case *slidetypes.ReadReceiptEvent:
+		if known {
+			return b.sendReceipt(ctx, key, data.ReadReceipt)
+		}
 	default:
 		b.log.Debug().Str("type", d.TypeName).Msg("delta ignored")
 	}
@@ -179,4 +183,18 @@ func (b *Backend) send(ctx context.Context, evs ...core.Event) error {
 		}
 	}
 	return nil
+}
+
+// sendReceipt sends a read receipt. The user's own, from another device,
+// means they read the thread, as upstream treats it.
+func (b *Backend) sendReceipt(ctx context.Context, key core.ThreadID, rr slidetypes.ReadReceipt) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	who, upTo := core.UserID(rr.ParticipantFBID), rr.WatermarkTimestampMS.Time
+	if who == core.UserID(client.GetOwnFBID()) {
+		return b.send(ctx, core.ThreadRead{Thread: key, Until: upTo})
+	}
+	return b.send(ctx, core.ReadReceipt{Thread: key, User: who, UpTo: upTo})
 }

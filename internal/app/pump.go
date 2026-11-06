@@ -161,6 +161,8 @@ func (p *pump) apply(ctx context.Context, ev core.Event) {
 		err = p.st.PutThreads(ctx, []core.Thread{ev.Thread})
 	case core.ThreadRead:
 		err = p.st.MarkRead(ctx, ev.Thread, ev.Until)
+	case core.ReadReceipt:
+		err = p.st.PutReadReceipt(ctx, ev.Thread, ev.User, ev.UpTo)
 	case core.SeqAdvanced:
 		if !p.failed {
 			p.session.SeqID, p.session.SeqAt = ev.SeqID, ev.At

@@ -21,7 +21,9 @@
               "last_activity_timestamp_ms": "1767225600000",
               "slide_messages": {
                 "edges": [
-                  {"node": {"message_id": "mid.$fake1c", "sender_fbid": "10000000000000001", "thread_fbid": "3400000000000001", "content_type": "TEXT", "timestamp_ms": "1767225600000", "text_body": "placeholder three"}},
+                  {"node": {"message_id": "mid.$fake1c", "sender_fbid": "10000000000000001", "thread_fbid": "3400000000000001", "content_type": "TEXT", "timestamp_ms": "1767225600000", "text_body": "placeholder three",
+                    "replied_to_message_id": "mid.$fake1a",
+                    "replied_to_message": {"message_id": "mid.$fake1a", "sender_fbid": "100", "thread_fbid": "3400000000000001", "content_type": "TEXT", "timestamp_ms": "1767225400000", "text_body": "placeholder one"}}},
                   {"node": {"message_id": "mid.$fake1b", "sender_fbid": "100", "thread_fbid": "3400000000000001", "content_type": "REACTION_LOG_XMAT", "timestamp_ms": "1767225500000", "text_body": ""}},
                   {"node": {"message_id": "mid.$fake1a", "sender_fbid": "100", "thread_fbid": "3400000000000001", "content_type": "TEXT", "offline_threading_id": "7000000000000000001", "timestamp_ms": "1767225400000", "text_body": "placeholder one"}}
                 ],
@@ -59,7 +61,8 @@
                 "page_info": {"has_next_page": false}
               },
               "slide_read_receipts": [
-                {"participant_fbid": "100", "watermark_timestamp_ms": "1767225300000"}
+                {"participant_fbid": "100", "watermark_timestamp_ms": "1767225300000"},
+                {"participant_fbid": "10000000000000002", "watermark_timestamp_ms": "1767225300000"}
               ],
               "marked_as_unread": false,
               "input_mode": 0

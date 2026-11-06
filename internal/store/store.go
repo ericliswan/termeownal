@@ -83,6 +83,15 @@ var migrations = []string{
 	CREATE INDEX messages_by_otid ON messages (otid);`,
 	// 2: drop messages cached without an ID (read from an empty message_id); history loads them again.
 	`DELETE FROM messages WHERE id = '';`,
+	// 3: replies and read receipts. Cached messages are dropped so they load
+	// again with what they reply to; local ones not yet sent are kept.
+	`ALTER TABLE messages ADD COLUMN reply_to_id TEXT NOT NULL DEFAULT '';
+	ALTER TABLE messages ADD COLUMN reply_sender_fbid INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE messages ADD COLUMN reply_text TEXT NOT NULL DEFAULT '';
+	ALTER TABLE messages ADD COLUMN reply_content_type TEXT NOT NULL DEFAULT '';
+	ALTER TABLE thread_members ADD COLUMN read_up_to_ms INTEGER NOT NULL DEFAULT 0;
+	DELETE FROM messages WHERE send_state = 0;
+	UPDATE threads SET history_complete = 0;`,
 }
 
 // tables lists every table, for emptying the cache when the account changes.

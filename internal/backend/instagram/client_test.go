@@ -408,6 +408,11 @@ func TestDeltas(t *testing.T) {
 		{name: "mark read", delta: `{"__typename":"SlideUQPPMarkRead","thread_fbid":"3400000000000002","read_timestamp_ms":"1767225800000"}`,
 			want: []core.Event{core.ThreadRead{Thread: 3400000000000002, Until: time.UnixMilli(1767225800000)}}},
 		{name: "mark read in an unknown thread", delta: `{"__typename":"SlideUQPPMarkRead","thread_fbid":"3400000000000008","read_timestamp_ms":"1767225800000"}`},
+		{name: "someone else's read receipt", delta: fmt.Sprintf(`{"__typename":"SlideUQPPReadReceipt","thread_fbid":"3400000000000002","read_receipt":{"participant_fbid":"%d","watermark_timestamp_ms":"1767225800000"}}`, bob.ID),
+			want: []core.Event{core.ReadReceipt{Thread: 3400000000000002, User: bob.ID, UpTo: time.UnixMilli(1767225800000)}}},
+		{name: "the user's own read receipt", delta: fmt.Sprintf(`{"__typename":"SlideUQPPReadReceipt","thread_fbid":"3400000000000002","read_receipt":{"participant_fbid":"%d","watermark_timestamp_ms":"1767225800000"}}`, testMe.ID),
+			want: []core.Event{core.ThreadRead{Thread: 3400000000000002, Until: time.UnixMilli(1767225800000)}}},
+		{name: "read receipt in an unknown thread", delta: `{"__typename":"SlideUQPPReadReceipt","thread_fbid":"3400000000000008","read_receipt":{"participant_fbid":"1","watermark_timestamp_ms":"1767225800000"}}`},
 		{name: "rename fetches the thread", delta: `{"__typename":"SlideUQPPThreadName","thread_fbid":"3400000000000002","thread_name":"Meow Club"}`,
 			want: []core.Event{core.ThreadUpdated{Thread: renamed}}, calls: []string{"GetThread 3400000000000002"}},
 		{name: "no thread", delta: `{"__typename":"SlideUQPPCreate1To1Thread","thread_fbid":""}`},
@@ -715,13 +720,19 @@ func TestSendAndMarkRead(t *testing.T) {
 	snapshot(t, b, f)
 	thread := core.ThreadID(alice.ID)
 
-	if err := b.Send(t.Context(), thread, "placeholder sent", "7000000000000000002"); err != nil {
+	if err := b.Send(t.Context(), thread, "placeholder sent", "7000000000000000002", ""); err != nil {
 		t.Fatal(err)
 	}
 	_, reqs := f.takeCalls()
 	send := reqs[0].(*slidetypes.SendTextRequest)
-	if *send.IGThreadIGID != "3400000000000001" || send.OfflineThreadingID != "7000000000000000002" || send.Text.Value != "placeholder sent" {
+	if *send.IGThreadIGID != "3400000000000001" || send.OfflineThreadingID != "7000000000000000002" || send.Text.Value != "placeholder sent" || send.ReplyToMessageID != nil {
 		t.Fatalf("send = %+v", send)
+	}
+	if err := b.Send(t.Context(), thread, "placeholder reply", "7000000000000000004", "mid.$fake1a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, reqs := f.takeCalls(); *reqs[0].(*slidetypes.SendTextRequest).ReplyToMessageID != "mid.$fake1a" {
+		t.Fatal("reply not sent as one")
 	}
 
 	at := time.UnixMilli(1767225600000)
@@ -743,7 +754,7 @@ func TestSendAndMarkRead(t *testing.T) {
 	}
 
 	f.fail["SendMessage"] = httpclient.ErrRateLimited
-	if err := b.Send(t.Context(), thread, "placeholder sent", "7000000000000000003"); !errors.Is(err, core.ErrRateLimited) {
+	if err := b.Send(t.Context(), thread, "placeholder sent", "7000000000000000003", ""); !errors.Is(err, core.ErrRateLimited) {
 		t.Fatalf("err = %v", err)
 	}
 }
@@ -771,7 +782,7 @@ func TestThreadIDLookup(t *testing.T) {
 		{name: "unknown", thread: 10000000000000005,
 			calls: []string{"FetchThreadID 10000000000000005", "GetThread 10000000000000005"}},
 	} {
-		err := b.Send(t.Context(), step.thread, "placeholder sent", "7000000000000000002")
+		err := b.Send(t.Context(), step.thread, "placeholder sent", "7000000000000000002", "")
 		calls, reqs := f.takeCalls()
 		if !slices.Equal(calls, step.calls) {
 			t.Errorf("%s: calls = %q, want %q", step.name, calls, step.calls)
@@ -799,7 +810,7 @@ func TestLogsHoldNoSecretsOrText(t *testing.T) {
 	handle(t, b, delta(t, `{"__typename":"SlideUQPPNewMessage","thread_fbid":"3400000000000001","message":{"message_id":"mid.$live1","sender_fbid":"1","thread_fbid":"3400000000000001","content_type":"TEXT","timestamp_ms":"1767225700000","text_body":"placeholder live"}}`))
 	handle(t, b, &slidetypes.ReconnectionStateUpdate{State: testState})
 	handle(t, b, &slidetypes.Disconnected{Error: errors.New("fake drop")})
-	if err := b.Send(t.Context(), core.ThreadID(alice.ID), "placeholder sent", "7000000000000000002"); err != nil {
+	if err := b.Send(t.Context(), core.ThreadID(alice.ID), "placeholder sent", "7000000000000000002", ""); err != nil {
 		t.Fatal(err)
 	}
 	b.Close()
