@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in meow doesn't work as expected
+labels: ["type: bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `meow --version`
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and terminal
+      placeholder: e.g. macOS 15 + Ghostty, Ubuntu 24.04 + kitty
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Does it happen with `meow --backend=fake` too?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Log lines
+      description: Relevant lines from `meow.log` (see "Where your data lives" in the README), with usernames and IDs removed.
+      render: text
+  - type: checkboxes
+    id: no-secrets
+    attributes:
+      label: Private data
+      options:
+        - label: This report has no cookies, session files, usernames, Instagram IDs or message text
+          required: true

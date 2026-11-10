@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement to meow
+labels: ["type: feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: security
+    attributes:
+      label: Security and account impact
+      description: Does this touch session data, logs or what's sent to Instagram (and so the chance of the account being flagged)? Write "none" if not.
+    validations:
+      required: true
