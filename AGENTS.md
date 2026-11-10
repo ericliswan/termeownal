@@ -48,6 +48,7 @@ Keep this section in sync with the `Makefile`.
 | Test with race detector | `go test -race ./...` |
 | Lint | `golangci-lint run` |
 | Format | `gofmt -w . && goimports -w .` |
+| Fuzz the cookie paste parser for 60 s (CI does on PRs touching `login.go`; a failing input lands in `testdata/fuzz/`, keep it as a regression case) | `make fuzz` |
 | Update UI golden files | `go test ./internal/ui/... -update` |
 | Record the README demo GIF (needs `vhs`, fake backend) | `make demo` |
 | Check the release config | `goreleaser check` (CI runs it) |
@@ -104,7 +105,7 @@ termeownal/
 ├── Makefile
 ├── imports_test.go               # import boundary test (rule 1)
 └── .github/
-    ├── workflows/ci.yml, release.yml
+    ├── workflows/ci.yml, release.yml, fuzz.yml
     ├── ISSUE_TEMPLATE/           # bug and feature forms; blank issues off
     └── pull_request_template.md  # mirrors the §8 checklist
 ```

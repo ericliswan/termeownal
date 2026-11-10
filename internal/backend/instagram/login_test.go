@@ -152,6 +152,30 @@ func TestBadPastesFailWithoutQuotingThem(t *testing.T) {
 	}
 }
 
+// FuzzSubmitPaste feeds Submit pastes with a marker somewhere inside: it
+// must never panic, and its errors must never quote the paste (rule 4).
+func FuzzSubmitPaste(f *testing.F) {
+	for _, seed := range [][2]string{
+		{`{"sessionid": "`, `", "csrftoken": "x", "ds_user_id": "1"}`},
+		{`{"sessionid": "`, `"`},
+		{`curl https://www.instagram.com/ -b 'sessionid=`, `; csrftoken=x; ds_user_id=1'`},
+		{`curl -H 'Cookie: rur=`, `\054; sessionid=x'`},
+		{`curl -H "x-fake: `, `"`},
+		{`curl -b '`, ``},
+		{``, `=x`},
+	} {
+		f.Add(seed[0], seed[1])
+	}
+	f.Fuzz(func(t *testing.T, before, after string) {
+		const marker = "Zq9Secret"
+		l, _ := fakeLogin(nil)
+		_, err := l.Submit(t.Context(), map[string]string{pasteField: before + marker + after})
+		if err != nil && strings.Contains(err.Error(), marker) {
+			t.Errorf("error quotes the paste: %v", err)
+		}
+	})
+}
+
 func TestFailedCheckSavesNothing(t *testing.T) {
 	l, _ := fakeLogin(core.ErrSessionExpired)
 	step, err := l.Submit(t.Context(), map[string]string{"sessionid": "a", "csrftoken": "b", "ds_user_id": "1"})

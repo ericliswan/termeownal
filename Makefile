@@ -1,4 +1,4 @@
-.PHONY: build static test race lint fmt check demo snapshot
+.PHONY: build static test race lint fmt check fuzz demo snapshot
 
 build:
 	go build ./...
@@ -24,6 +24,10 @@ check:
 	go vet ./...
 	go test -race ./...
 	golangci-lint run
+
+# Fuzzes the cookie paste parser, as CI does when login.go changes.
+fuzz:
+	go test -run '^$$' -fuzz=FuzzSubmitPaste -fuzztime=60s ./internal/backend/instagram
 
 # Records the README demo against the fake backend (needs vhs).
 demo: static
