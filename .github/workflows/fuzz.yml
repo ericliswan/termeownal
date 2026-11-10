@@ -1,0 +1,33 @@
+name: Fuzz
+
+# Separate from ci.yml because path filters apply to a whole workflow.
+on:
+  pull_request:
+    paths:
+      - internal/backend/instagram/login.go
+      - .github/workflows/fuzz.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Fuzz the cookie paste parser for 60 seconds
+        run: go test -run '^$' -fuzz=FuzzSubmitPaste -fuzztime=60s ./internal/backend/instagram
+      - name: Keep the failing input
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-failure
+          path: internal/backend/instagram/testdata/fuzz
