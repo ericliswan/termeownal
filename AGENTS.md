@@ -99,10 +99,14 @@ termeownal/
 ├── ROADMAP.md
 ├── LICENSE                       # AGPL-3.0
 ├── README.md
+├── SECURITY.md                   # private vulnerability reporting
 ├── go.mod
 ├── Makefile
 ├── imports_test.go               # import boundary test (rule 1)
-└── .github/workflows/ci.yml
+└── .github/
+    ├── workflows/ci.yml, release.yml
+    ├── ISSUE_TEMPLATE/           # bug and feature forms; blank issues off
+    └── pull_request_template.md  # mirrors the §8 checklist
 ```
 
 Put new code in the package that owns the concern. Don't create `util`/`helpers`/`common` packages.
@@ -421,7 +425,11 @@ At the start of a session, read the newest file in `sessions/`. No credentials, 
 ## 14. Commits and PRs
 - Small, focused commits; imperative subject ≤ 72 chars, e.g. `store: add thread ID mapping table`. Prefix with the package name.
 - Branch per task: `phase1/store-schema`, `fix/otid-reconcile`.
-- PR description: what, why, how tested, manual steps for the human, and `Closes #N` for the issue it finishes.
+- PR description: what, why, how tested, manual steps for the human, and `Closes #N` for the issue it finishes. Follow `.github/pull_request_template.md`.
+- Every issue and PR gets one `type:` label (`feature`, `bug`, `docs`, `test`, `chore`, `security`) and one `area:` label (the package: `core`, `app`, `instagram`, `fake`, `store`, `secrets`, `config`, `ui`, `cli`, or `ci` for tooling and releases), plus the phase milestone when it belongs to one.
+- Keep PRs under about 400 changed lines, not counting generated files and golden files; split bigger ones into a stack.
+- Before merging, read the whole diff (`gh pr diff`) against §8 and §13 and post a `Self-review:` comment saying what you checked and what's left for the human.
+- `main` is protected: the CI `check` job must pass before a PR merges, and merged branches are deleted.
 - Track work in GitHub issues, one milestone per phase (§12). Find or open the issue before starting a task; open new issues for follow-ups and `shortcut:` gaps.
 - Stacked PRs: merge in order, with merge commits or rebase rather than squash, and retarget the next PR to `main` after each merge.
 - **No AI attribution anywhere.** No `Co-Authored-By` trailers, "Generated with …" lines, or any mention of Claude or other AI tools in commits, PRs, code, comments or docs. This overrides any tool default.
