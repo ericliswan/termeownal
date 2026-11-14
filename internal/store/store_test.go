@@ -260,6 +260,20 @@ func TestMigration3KeepsOnlyLocalMessages(t *testing.T) {
 	}
 }
 
+func TestMigration4KeepsOnlyLocalMessages(t *testing.T) {
+	db := migrateTo(t, 4, `
+		INSERT INTO threads VALUES (2, 'Ana', 0, 3, 0, 1);
+		INSERT INTO messages (id, thread_key, sender_fbid, ts_ms, content_type, text, otid, send_state) VALUES
+			('mid.$sent', 2, 1, 3, 'TEXT', 'x', '', 0),
+			('local:o1', 2, 1, 4, 'TEXT', 'x', 'o1', 2)`)
+	if ids := column[string](t, db, "SELECT id FROM messages"); !slices.Equal(ids, []string{"local:o1"}) {
+		t.Errorf("ids = %q, want the unsent local copy", ids)
+	}
+	if done := column[bool](t, db, "SELECT history_complete FROM threads"); !slices.Equal(done, []bool{false}) {
+		t.Errorf("history_complete = %v, want false so history loads again", done)
+	}
+}
+
 func TestOpenRefusesNewerSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
 	db, err := sql.Open("sqlite", path)
@@ -407,12 +421,19 @@ func TestPutThreadsUpdatesThread(t *testing.T) {
 func TestReplayChangesNothing(t *testing.T) {
 	s := newStore(t)
 	ctx := t.Context()
+	a1 := msg("a1", dm, anaID, 1)
+	a1.Reactions = []core.Reaction{{User: meID, Emoji: "👍", ID: "r0"}}
 	steps := []func() error{
 		func() error {
 			return s.PutThreads(ctx, []core.Thread{{
 				ID: dm, Title: "Ana", Members: []core.User{ana}, LastActivity: at(3), Unread: true,
-				Messages: []core.Message{msg("a1", dm, anaID, 1), msg("a2", dm, meID, 2), msg("a3", dm, anaID, 3)},
+				Messages: []core.Message{a1, msg("a2", dm, meID, 2), msg("a3", dm, anaID, 3)},
 			}})
+		},
+		func() error { return s.PutReaction(ctx, "a2", core.Reaction{User: anaID, Emoji: "❤️", ID: "r1"}) },
+		func() error {
+			_, _, err := s.RemoveReaction(ctx, "a1", 0, "r0")
+			return err
 		},
 		func() error { return s.AddMessage(ctx, msg("a4", dm, anaID, 4)) },
 		func() error { return s.AddMessage(ctx, local("o1", 5)) },
@@ -438,6 +459,53 @@ func TestReplayChangesNothing(t *testing.T) {
 	wantIDs(t, history(t, s, dm), "a0", "a0b", "a1", "a2", "a3", "a4", "a5")
 	if thread(t, s, dm).Unread {
 		t.Error("thread unread after replay")
+	}
+}
+
+func TestReactions(t *testing.T) {
+	a1 := msg("a1", dm, anaID, 1)
+	a1.Reactions = []core.Reaction{{User: anaID, Emoji: "❤️", ID: "r1"}, {User: meID, Emoji: "😂", ID: "r2"}}
+	s := withDM(t, a1, msg("a2", dm, meID, 2))
+	ctx := t.Context()
+	remove := func(msg core.MessageID, user core.UserID, id string, wantMsg core.MessageID, wantUser core.UserID) func() error {
+		return func() error {
+			gotMsg, gotUser, err := s.RemoveReaction(ctx, msg, user, id)
+			if gotMsg != wantMsg || gotUser != wantUser {
+				t.Errorf("RemoveReaction(%q, %d, %q) = %q, %d; want %q, %d", msg, user, id, gotMsg, gotUser, wantMsg, wantUser)
+			}
+			return err
+		}
+	}
+	type reactions map[core.MessageID][]core.Reaction
+	steps := []struct {
+		name string
+		do   func() error
+		want reactions
+	}{
+		{"snapshot", func() error { return nil }, reactions{"a1": a1.Reactions}},
+		{"add", func() error { return s.PutReaction(ctx, "a2", core.Reaction{User: anaID, Emoji: "👍", ID: "r3"}) },
+			reactions{"a1": a1.Reactions, "a2": {{User: anaID, Emoji: "👍", ID: "r3"}}}},
+		{"replace own", func() error { return s.PutReaction(ctx, "a2", core.Reaction{User: anaID, Emoji: "😮", ID: "r4"}) },
+			reactions{"a1": a1.Reactions, "a2": {{User: anaID, Emoji: "😮", ID: "r4"}}}},
+		{"remove by ID", remove("other", 0, "r4", "a2", anaID), reactions{"a1": a1.Reactions}},
+		{"remove unknown ID", remove("other", 0, "r4", "other", 0), reactions{"a1": a1.Reactions}},
+		{"remove without ID", remove("a1", 0, "", "a1", 0), reactions{"a1": a1.Reactions}},
+		{"remove by member", remove("a1", meID, "", "a1", meID), reactions{"a1": a1.Reactions[:1]}},
+		{"page replaces", func() error {
+			return s.PutHistory(ctx, dm, "", []core.Message{msg("a1", dm, anaID, 1), msg("a2", dm, meID, 2)}, true)
+		}, reactions{}},
+	}
+	for _, step := range steps {
+		must(t, step.do())
+		got := reactions{}
+		for _, m := range history(t, s, dm) {
+			if m.Reactions != nil {
+				got[m.ID] = m.Reactions
+			}
+		}
+		if !reflect.DeepEqual(got, step.want) {
+			t.Errorf("after %s: reactions = %v, want %v", step.name, got, step.want)
+		}
 	}
 }
 
@@ -615,6 +683,7 @@ func TestSetMe(t *testing.T) {
 		t.Fatalf("after renaming: %v, %+v; want the cache kept", gotMe, threads)
 	}
 
+	must(t, s.PutReaction(ctx, "a1", core.Reaction{User: anaID, Emoji: "❤️"}))
 	other := core.User{ID: 77, Username: "other", Name: "Other"}
 	must(t, s.SetMe(ctx, other))
 	for table, rows := range dump(t, s.db) {

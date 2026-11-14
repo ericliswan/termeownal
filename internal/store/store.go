@@ -92,10 +92,23 @@ var migrations = []string{
 	ALTER TABLE thread_members ADD COLUMN read_up_to_ms INTEGER NOT NULL DEFAULT 0;
 	DELETE FROM messages WHERE send_state = 0;
 	UPDATE threads SET history_complete = 0;`,
+	// 4: reactions, one per member per message. log_message_id is the
+	// reaction's own ID, which a removal may carry instead of the member.
+	// Cached messages are dropped so they load again with their reactions.
+	`CREATE TABLE reactions (
+		message_id     TEXT NOT NULL,
+		user_fbid      INTEGER NOT NULL,
+		emoji          TEXT NOT NULL,
+		log_message_id TEXT NOT NULL,
+		PRIMARY KEY (message_id, user_fbid)
+	);
+	CREATE INDEX reactions_by_log_id ON reactions (log_message_id);
+	DELETE FROM messages WHERE send_state = 0;
+	UPDATE threads SET history_complete = 0;`,
 }
 
 // tables lists every table, for emptying the cache when the account changes.
-var tables = []string{"account", "users", "threads", "thread_members", "messages"}
+var tables = []string{"account", "users", "threads", "thread_members", "messages", "reactions"}
 
 // Store is the cache. Its methods are safe for concurrent use; they run one
 // at a time.

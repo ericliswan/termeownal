@@ -69,6 +69,25 @@ type Typing struct {
 	Active bool
 }
 
+// ReactionAdded means a member reacted to message Message, replacing their
+// earlier reaction to it.
+type ReactionAdded struct {
+	Thread   ThreadID
+	Message  MessageID
+	Reaction Reaction
+}
+
+// ReactionRemoved means member User removed their reaction to message
+// Message. The service may name only the reaction's ID: User is then 0, and
+// Message may not be the message reacted to. The app finds both from the
+// stored reaction before showing the removal.
+type ReactionRemoved struct {
+	Thread  ThreadID
+	Message MessageID
+	User    UserID
+	ID      string
+}
+
 // ThreadUpdated carries a thread's current details. It comes before the
 // first event for a thread the backend hadn't reported yet.
 type ThreadUpdated struct{ Thread Thread }
@@ -83,13 +102,15 @@ type SeqAdvanced struct {
 // SessionChanged means the login data changed: call ExportAuth and save it.
 type SessionChanged struct{}
 
-func (StatusChanged) event()  {}
-func (AuthFailed) event()     {}
-func (ResyncNeeded) event()   {}
-func (MessageAdded) event()   {}
-func (ThreadRead) event()     {}
-func (ReadReceipt) event()    {}
-func (Typing) event()         {}
-func (ThreadUpdated) event()  {}
-func (SeqAdvanced) event()    {}
-func (SessionChanged) event() {}
+func (StatusChanged) event()   {}
+func (AuthFailed) event()      {}
+func (ResyncNeeded) event()    {}
+func (MessageAdded) event()    {}
+func (ThreadRead) event()      {}
+func (ReadReceipt) event()     {}
+func (Typing) event()          {}
+func (ReactionAdded) event()   {}
+func (ReactionRemoved) event() {}
+func (ThreadUpdated) event()   {}
+func (SeqAdvanced) event()     {}
+func (SessionChanged) event()  {}

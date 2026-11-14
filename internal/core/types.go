@@ -82,6 +82,17 @@ type Message struct {
 	State SendState
 	// ReplyTo is the message this one replies to; its ID is "" if none.
 	ReplyTo Quote
+	// Reactions holds at most one reaction per member.
+	Reactions []Reaction
+}
+
+// Reaction is a member's reaction to a message.
+type Reaction struct {
+	User  UserID
+	Emoji string
+	// ID is the service's ID for the reaction, if it has one. A removal
+	// may name only this ID.
+	ID string
 }
 
 // Quote is the message a reply quotes, as it was when the reply was sent.

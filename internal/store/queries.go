@@ -180,7 +180,7 @@ func putThread(ctx context.Context, tx *sql.Tx, t core.Thread) error {
 		return err
 	}
 	for _, m := range t.Messages {
-		if _, err := putMessage(ctx, tx, m); err != nil {
+		if err := putServerMessage(ctx, tx, m); err != nil {
 			return err
 		}
 	}
@@ -261,6 +261,70 @@ func putMessage(ctx context.Context, tx *sql.Tx, m core.Message) (bool, error) {
 	_, err = tx.ExecContext(ctx, "UPDATE threads SET last_activity_ms = max(last_activity_ms, ?) WHERE thread_key = ?",
 		m.At.UnixMilli(), m.Thread)
 	return err == nil, err
+}
+
+// putServerMessage stores m, fetched from the server with its current
+// reactions, which replace the cached ones.
+// shortcut: a page fetched before a live reaction and stored after it undoes
+// the reaction until the thread is opened again; compare reaction times if
+// that's noticed.
+func putServerMessage(ctx context.Context, tx *sql.Tx, m core.Message) error {
+	if _, err := putMessage(ctx, tx, m); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM reactions WHERE message_id = ?", m.ID); err != nil {
+		return err
+	}
+	for _, r := range m.Reactions {
+		if err := putReaction(ctx, tx, m.ID, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func putReaction(ctx context.Context, tx execer, msg core.MessageID, r core.Reaction) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO reactions (message_id, user_fbid, emoji, log_message_id) VALUES (?, ?, ?, ?)
+		ON CONFLICT (message_id, user_fbid) DO UPDATE SET emoji = excluded.emoji, log_message_id = excluded.log_message_id`,
+		msg, r.User, r.Emoji, r.ID)
+	return err
+}
+
+// execer is a *sql.DB or a *sql.Tx.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// PutReaction stores member r.User's reaction to message msg, replacing
+// their earlier one.
+func (s *Store) PutReaction(ctx context.Context, msg core.MessageID, r core.Reaction) error {
+	if err := putReaction(ctx, s.db, msg, r); err != nil {
+		return fmt.Errorf("cache reaction: %w", err)
+	}
+	return nil
+}
+
+// RemoveReaction deletes member user's reaction to message msg. If user is
+// 0, it deletes the reaction whose ID is id instead. It returns the message
+// and member the removed reaction belonged to; user stays 0 if it was
+// unknown and no reaction with that ID is cached.
+func (s *Store) RemoveReaction(ctx context.Context, msg core.MessageID, user core.UserID, id string) (core.MessageID, core.UserID, error) {
+	var err error
+	switch {
+	case user != 0:
+		_, err = s.db.ExecContext(ctx, "DELETE FROM reactions WHERE message_id = ? AND user_fbid = ?", msg, user)
+	case id != "":
+		err = s.db.QueryRowContext(ctx, "DELETE FROM reactions WHERE log_message_id = ? RETURNING message_id, user_fbid", id).
+			Scan(&msg, &user)
+		if errors.Is(err, sql.ErrNoRows) {
+			err = nil
+		}
+	}
+	if err != nil {
+		return msg, user, fmt.Errorf("cache reaction removal: %w", err)
+	}
+	return msg, user, nil
 }
 
 // trimGap keeps a thread's cached messages contiguous when page, its newest
@@ -348,7 +412,7 @@ func (s *Store) PutHistory(ctx context.Context, thread core.ThreadID, before cor
 			}
 		}
 		for _, m := range msgs {
-			if _, err := putMessage(ctx, tx, m); err != nil {
+			if err := putServerMessage(ctx, tx, m); err != nil {
 				return err
 			}
 		}
@@ -417,6 +481,33 @@ func messagesBefore(ctx context.Context, tx *sql.Tx, thread core.ThreadID, befor
 		m.At = time.UnixMilli(ms)
 		msgs = append(msgs, m)
 	}
+	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+		return nil, err
+	}
 	slices.Reverse(msgs)
-	return msgs, rows.Err()
+	for i := range msgs {
+		if msgs[i].Reactions, err = reactions(ctx, tx, msgs[i].ID); err != nil {
+			return nil, err
+		}
+	}
+	return msgs, nil
+}
+
+// reactions returns a message's cached reactions in the order they were
+// first stored.
+func reactions(ctx context.Context, tx *sql.Tx, msg core.MessageID) ([]core.Reaction, error) {
+	rows, err := tx.QueryContext(ctx, "SELECT user_fbid, emoji, log_message_id FROM reactions WHERE message_id = ? ORDER BY rowid", msg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []core.Reaction
+	for rows.Next() {
+		var r core.Reaction
+		if err := rows.Scan(&r.User, &r.Emoji, &r.ID); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
