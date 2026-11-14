@@ -47,10 +47,12 @@ func clock() time.Time { return testNow }
 type backendActions struct {
 	b       core.Backend
 	sendErr error
-	loads   int
-	sent    []core.Message
-	read    []core.Message
-	typing  []core.Typing
+	// reactErr, while set, fails React.
+	reactErr error
+	loads    int
+	sent     []core.Message
+	read     []core.Message
+	typing   []core.Typing
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -87,6 +89,19 @@ func (a *backendActions) MarkRead(upTo core.Message) tea.Cmd {
 func (a *backendActions) Typing(thread core.ThreadID, active bool) tea.Cmd {
 	return func() tea.Msg {
 		a.typing = append(a.typing, core.Typing{Thread: thread, Active: active})
+		return nil
+	}
+}
+
+func (a *backendActions) React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd {
+	return func() tea.Msg {
+		err := a.reactErr
+		if err == nil {
+			err = a.b.React(context.Background(), thread, msg, emoji, remove)
+		}
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
 		return nil
 	}
 }
@@ -262,6 +277,11 @@ func TestScreens(t *testing.T) {
 		h.press("j", "enter", "love :hea")
 		golden.RequireEqual(t, h.screen())
 	})
+	t.Run("react", func(t *testing.T) {
+		h := newHarness(t, 100, 30)
+		h.press("j", "enter", "shift+tab", "k", "e")
+		golden.RequireEqual(t, h.screen())
+	})
 	t.Run("help", func(t *testing.T) {
 		h := newHarness(t, 100, 30)
 		h.press("?")
@@ -353,6 +373,120 @@ func TestEmojiSuggestionsTakeTabAndEsc(t *testing.T) {
 	h.press("tab")
 	if h.m.focus == paneComposer {
 		t.Fatal("tab without suggestions kept the focus")
+	}
+}
+
+// selectedReactions returns the reactions to the selected message.
+func (h *harness) selectedReactions() []core.Reaction {
+	h.t.Helper()
+	sel, ok := h.m.chat.Selected()
+	if !ok {
+		h.t.Fatal("no message selected")
+	}
+	for _, msg := range h.m.threads[sel.Thread].Messages {
+		if msg.ID == sel.ID {
+			return msg.Reactions
+		}
+	}
+	h.t.Fatalf("selected message %s not loaded", sel.ID)
+	return nil
+}
+
+// own is the user's reaction in rs, or "".
+func (h *harness) own(rs []core.Reaction) string {
+	for _, r := range rs {
+		if r.User == h.m.me.ID {
+			return r.Emoji
+		}
+	}
+	return ""
+}
+
+func TestReactToSelectedMessage(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k", "e", "enter")
+	if got := h.own(h.selectedReactions()); got != "❤️" {
+		t.Fatalf("own reaction = %q before the echo, want ❤️", got)
+	}
+	if strings.Contains(h.screen(), "Esc cancel") {
+		t.Fatalf("picker still open:\n%s", h.screen())
+	}
+	added := h.nextEvent().(core.ReactionAdded)
+	h.do(added)
+	h.do(added) // delivered twice
+	if rs := h.selectedReactions(); h.own(rs) != "❤️" || len(slices.DeleteFunc(slices.Clone(rs), func(r core.Reaction) bool { return r.User != h.m.me.ID })) != 1 {
+		t.Fatalf("reactions after the echo = %+v, want one ❤️ of the user's", rs)
+	}
+
+	h.press("e", "joy", "enter")
+	if got := h.own(h.selectedReactions()); got != "😂" {
+		t.Fatalf("own reaction = %q, want 😂 replacing ❤️", got)
+	}
+	h.do(h.nextEvent())
+
+	h.press("e", "joy", "enter") // the same again removes it
+	if got := h.own(h.selectedReactions()); got != "" {
+		t.Fatalf("own reaction = %q, want it removed", got)
+	}
+	if ev, ok := h.nextEvent().(core.ReactionRemoved); !ok || ev.User != h.m.me.ID {
+		t.Fatalf("event = %+v, want the user's removal", ev)
+	}
+}
+
+func TestReactEscCancels(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k")
+	before := h.selectedReactions()
+	h.press("e", "esc")
+	if strings.Contains(h.screen(), "Esc cancel") || len(h.selectedReactions()) != len(before) {
+		t.Fatalf("Esc didn't just close the picker:\n%s", h.screen())
+	}
+	if h.m.focus != paneChat {
+		t.Fatalf("focus = %d after Esc in the picker, want the messages pane", h.m.focus)
+	}
+}
+
+func TestReactErrorRestores(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k", "e", "enter")
+	h.do(h.nextEvent())
+	h.act.reactErr = errors.New("react: boom")
+	h.press("e", "joy", "enter")
+	if got := h.own(h.selectedReactions()); got != "❤️" {
+		t.Fatalf("own reaction = %q after a failure, want ❤️ back", got)
+	}
+	if !strings.Contains(h.screen(), "boom") {
+		t.Fatalf("error not shown:\n%s", h.screen())
+	}
+}
+
+func TestOthersReactions(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k")
+	sel, _ := h.m.chat.Selected()
+	other := h.m.threads[sel.Thread].Members[0].ID
+	add := func(e string) {
+		h.do(core.ReactionAdded{Thread: sel.Thread, Message: sel.ID, Reaction: core.Reaction{User: other, Emoji: e, ID: "r" + e}})
+	}
+	theirs := func() string {
+		for _, r := range h.selectedReactions() {
+			if r.User == other {
+				return r.Emoji
+			}
+		}
+		return ""
+	}
+	add("😮")
+	add("\x1b[2J👍")
+	if got := theirs(); got != "[2J👍" {
+		t.Fatalf("their reaction = %q, want the cleaned 👍 replacing 😮", got)
+	}
+	if !strings.Contains(h.screen(), "👍") {
+		t.Fatalf("reaction not shown:\n%s", h.screen())
+	}
+	h.do(core.ReactionRemoved{Thread: sel.Thread, Message: sel.ID, User: other})
+	if got := theirs(); got != "" {
+		t.Fatalf("their reaction = %q after removal, want none", got)
 	}
 }
 

@@ -143,6 +143,19 @@ func (a actions) Typing(thread core.ThreadID, active bool) tea.Cmd {
 	}
 }
 
+// React sets or clears the user's reaction. The cache gets it from the
+// echo, like a reaction from another device.
+func (a actions) React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(a.ctx, sendTimeout)
+		defer cancel()
+		if err := a.b.React(ctx, thread, msg, emoji, remove); err != nil {
+			return ui.ErrorMsg{Err: fmt.Errorf("react: %w", err)}
+		}
+		return nil
+	}
+}
+
 func (a actions) MarkRead(upTo core.Message) tea.Cmd {
 	return func() tea.Msg {
 		err := a.b.MarkRead(a.ctx, upTo)

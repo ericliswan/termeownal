@@ -26,7 +26,7 @@ Instagram DMs in your terminal. Log in once, see your threads, read history, sen
 
 termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/meta/tree/main/pkg/instameow), the Instagram client library inside the [mautrix/meta](https://github.com/mautrix/meta) bridge. It doesn't run the bridge, Matrix or any server.
 
-> **Status: early development.** termeownal works with a real account: it loads your threads and history, and sends and receives messages live. Reactions, media and more come next; see [Features](#features). Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
+> **Status: early development.** termeownal works with a real account: it loads your threads and history, and sends and receives messages live, with replies and reactions. Edits, media and more come next; see [Features](#features). Progress is tracked in [`ROADMAP.md`](ROADMAP.md#14-milestones).
 
 ## Preview
 
@@ -58,6 +58,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Sending, and live incoming messages, renames and new threads
 - Sent messages show right away, with a retry (`r`) if one fails
 - Replies: select a message with `j`/`k` and press `r`; quoted replies show above the message
+- Reactions under each message; select one and press `e` to react, searching by name like `:joy:`
 - "Seen" under your newest message once the other side has read it
 - Typing indicators both ways; set `send_typing = false` to stop sending yours
 - Emoji by name, as in Discord: type `:heart:` for ❤️, or pick from the matches shown after `:he`
@@ -65,7 +66,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
 
-**Next:** reactions, edits and unsends, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
+**Next:** edits and unsends, new DMs and message requests, media (opened externally or shown inline on kitty, iTerm2 or sixel), notifications and themes.
 
 ## Installing
 

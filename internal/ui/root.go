@@ -66,6 +66,10 @@ type Actions interface {
 	// Typing tells thread's members whether the user is typing; returns
 	// nil.
 	Typing(thread core.ThreadID, active bool) tea.Cmd
+	// React sets the user's reaction to msg, or with remove clears emoji,
+	// their current one; returns an ErrorMsg if that fails, otherwise nil.
+	// It comes back as a core.ReactionAdded or core.ReactionRemoved.
+	React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -113,6 +117,15 @@ type typingShownMsg struct {
 
 // typingIdleMsg fires typingIdle after composer edit number gen.
 type typingIdleMsg struct{ gen int }
+
+// reactFailedMsg undoes the reaction the user set to msg, restoring prev,
+// which has no Emoji if they had none.
+type reactFailedMsg struct {
+	thread core.ThreadID
+	msg    core.MessageID
+	prev   core.Reaction
+	err    error
+}
 
 // errNoEcho marks a message that was accepted but never echoed.
 var errNoEcho = errors.New("send: no confirmation from the server")
@@ -184,6 +197,10 @@ type Model struct {
 	authErr       error
 	errText       string
 	help          bool
+	// reactTo is the message the reaction picker is open for; its ID is
+	// empty while the picker is closed.
+	reactTo core.Message
+	picker  overlay.Picker
 }
 
 // New returns the UI. now is the clock used to label times.
@@ -288,6 +305,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ErrorMsg:
 		return m.fail(msg.Err), nil
+	case reactFailedMsg:
+		m.setReaction(msg.thread, msg.msg, m.me.ID, msg.prev)
+		m.refresh()
+		return m.fail(msg.err), nil
 
 	case core.StatusChanged:
 		m.status = msg.Status
@@ -311,6 +332,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case core.MessageAdded:
 		m.addMessage(msg.Message)
+		m.refresh()
+	case core.ReactionAdded:
+		r := msg.Reaction
+		r.Emoji = cleanLine(r.Emoji)
+		m.setReaction(msg.Thread, msg.Message, r.User, r)
+		m.refresh()
+	case core.ReactionRemoved:
+		m.setReaction(msg.Thread, msg.Message, msg.User, core.Reaction{})
 		m.refresh()
 	case core.Typing:
 		st, ok := m.threads[msg.Thread]
@@ -354,6 +383,19 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			m.help = false
 		}
 		return m, nil
+	}
+	if m.reactTo.ID != "" {
+		p, picked, done := m.picker.Update(k)
+		m.picker = p
+		if !done {
+			return m, nil
+		}
+		target := m.reactTo
+		m.reactTo = core.Message{}
+		if picked == "" {
+			return m, nil
+		}
+		return m, m.react(target, picked)
 	}
 	_, open := m.chat.Thread()
 	switch {
@@ -401,6 +443,12 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, m.loadOlder(id)
 		case ok && s == "r":
 			return m, m.replyOrRetry(id)
+		case ok && s == "e":
+			if sel, ok := m.chat.Selected(); ok && sel.State == core.Sent {
+				m.reactTo = sel
+				m.picker = overlay.NewPicker(ownReaction(sel, m.me.ID).Emoji)
+			}
+			return m, nil
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
@@ -536,6 +584,52 @@ func (m *Model) replyOrRetry(id core.ThreadID) tea.Cmd {
 		return m.setFocus(paneComposer)
 	}
 	return nil // still sending: it has no ID to reply to yet
+}
+
+// react sets the user's reaction to msg to emoji, or clears it if it is
+// emoji already, showing the change before the service confirms it.
+func (m *Model) react(msg core.Message, emoji string) tea.Cmd {
+	prev := ownReaction(msg, m.me.ID)
+	remove := prev.Emoji == emoji
+	next := core.Reaction{User: m.me.ID, Emoji: emoji}
+	if remove {
+		next = core.Reaction{}
+	}
+	m.setReaction(msg.Thread, msg.ID, m.me.ID, next)
+	m.refresh()
+	cmd := m.act.React(msg.Thread, msg.ID, emoji, remove)
+	return func() tea.Msg {
+		if e, ok := cmd().(ErrorMsg); ok {
+			return reactFailedMsg{thread: msg.Thread, msg: msg.ID, prev: prev, err: e.Err}
+		}
+		return nil
+	}
+}
+
+// ownReaction is user's reaction to msg, with no Emoji if there is none.
+func ownReaction(msg core.Message, user core.UserID) core.Reaction {
+	if i := slices.IndexFunc(msg.Reactions, func(r core.Reaction) bool { return r.User == user }); i >= 0 {
+		return msg.Reactions[i]
+	}
+	return core.Reaction{}
+}
+
+// setReaction replaces user's reaction to a loaded message with r, or
+// removes it if r has no Emoji.
+func (m *Model) setReaction(thread core.ThreadID, msg core.MessageID, user core.UserID, r core.Reaction) {
+	st, ok := m.threads[thread]
+	if !ok {
+		return
+	}
+	i := slices.IndexFunc(st.Messages, func(o core.Message) bool { return o.ID == msg })
+	if i < 0 {
+		return
+	}
+	rs := slices.DeleteFunc(slices.Clone(st.Messages[i].Reactions), func(o core.Reaction) bool { return o.User == user })
+	if r.Emoji != "" {
+		rs = append(rs, r)
+	}
+	st.Messages[i].Reactions = rs
 }
 
 // setReply sets the message the composer replies to, and resizes the
@@ -768,6 +862,9 @@ func (m Model) render() string {
 	if m.help {
 		body = overlay.Center(body, overlay.Help(), m.width, h)
 	}
+	if m.reactTo.ID != "" {
+		body = overlay.Center(body, m.picker.View(), m.width, h)
+	}
 	return body + "\n" + m.statusBar()
 }
 
@@ -833,6 +930,10 @@ func cleanUser(u core.User) core.User {
 
 func cleanMessage(msg core.Message) core.Message {
 	msg.Text, msg.ContentType = clean(msg.Text), cleanLine(msg.ContentType)
+	msg.Reactions = slices.Clone(msg.Reactions)
+	for i := range msg.Reactions {
+		msg.Reactions[i].Emoji = cleanLine(msg.Reactions[i].Emoji)
+	}
 	return msg
 }
 
