@@ -34,6 +34,7 @@ var helpKeys = [][2]string{
 	{"g / G", "top / bottom"},
 	{"PgUp", "page up; at the top, load older"},
 	{"r", "reply to the message, or resend if it failed"},
+	{"e", "react to the message"},
 	{"Esc", "cancel the reply, or back to the thread list"},
 	{"?", "this help"},
 	{"Ctrl+C", "quit"},

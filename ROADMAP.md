@@ -470,7 +470,7 @@ The cache is **disposable** (`meow --reset-cache`). Secrets never go in it.
 | `/` | filter threads |
 | `Ctrl+N` | new DM |
 | `r` | reply to selected message (or retry if failed) |
-| `e` | react (Phase 3) |
+| `e` | react: quick reactions or search by shortcode; picking your current one removes it |
 | `o` | open media/link |
 | `Esc` | cancel reply / close overlay |
 | `?` | help |
@@ -563,7 +563,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] Typing in/out (configurable).
 - [x] Read receipts per member; "Seen".
 - [x] Emoji shortcodes in the composer (`:heart:`, suggestions after `:he`), from a table generated from gemoji (MIT).
-- [ ] Reactions shown + send with `e` (small emoji picker, searchable by shortcode).
+- [x] Reactions shown + send with `e` (small emoji picker, searchable by shortcode).
 - [ ] Edits and unsends shown; edit/unsend your own (`EditMessage`, `UnsendMessage`).
 - [ ] New DM with `SearchUsers` (`Ctrl+N`).
 - [ ] Message requests folder: view + accept.

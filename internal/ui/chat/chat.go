@@ -19,6 +19,7 @@ package chat
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -306,6 +307,9 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, selected core
 		case core.SendFailed:
 			lines = append(lines, indent+theme.Bold.Render("✗ not sent · r to retry"))
 		}
+		if len(m.Reactions) > 0 {
+			lines = append(lines, indent+ansi.Truncate(reactionLine(m.Reactions, me.ID), width-2, "…"))
+		}
 		spans[m.ID] = [2]int{start, len(lines)}
 		prev = m
 	}
@@ -313,6 +317,37 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, selected core
 		lines = append(lines, "  "+theme.Dim.Render(ansi.Truncate(seen, width-2, "…")))
 	}
 	return lines, spans
+}
+
+// reactionLine shows reactions grouped by emoji, in the order first seen,
+// with a count where more than one member chose it. The user's is
+// highlighted.
+func reactionLine(rs []core.Reaction, me core.UserID) string {
+	var order []string
+	count := map[string]int{}
+	mine := ""
+	for _, r := range rs {
+		if count[r.Emoji] == 0 {
+			order = append(order, r.Emoji)
+		}
+		count[r.Emoji]++
+		if r.User == me {
+			mine = r.Emoji
+		}
+	}
+	parts := make([]string, len(order))
+	for i, e := range order {
+		s := e
+		if count[e] > 1 {
+			s += " " + strconv.Itoa(count[e])
+		}
+		style := theme.Dim
+		if e == mine {
+			style = theme.Title
+		}
+		parts[i] = style.Render(s)
+	}
+	return strings.Join(parts, "  ")
 }
 
 // QuoteText is a quoted message on one line: the sender's name, then its
