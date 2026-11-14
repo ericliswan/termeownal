@@ -296,6 +296,9 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 		core.ThreadRead{Thread: th.ID, Until: at},
 		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: at},
 		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: testNow}, // older, late
+		core.ReactionAdded{Thread: th.ID, Message: "mid.replayed", Reaction: core.Reaction{User: th.Members[0].ID, Emoji: "❤️", ID: "r1"}},
+		core.ReactionAdded{Thread: th.ID, Message: "mid.replayed", Reaction: core.Reaction{User: 1, Emoji: "👍", ID: "r2"}},
+		core.ReactionRemoved{Thread: th.ID, Message: "mid.delete", ID: "r2"},
 		core.SeqAdvanced{SeqID: 1, At: at},
 	}
 
@@ -318,6 +321,10 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	}
 	if upTo := got.ReadUpTo[th.Members[0].ID]; !upTo.Equal(at) {
 		t.Errorf("member read up to %v, want %v", upTo, at)
+	}
+	want := []core.Reaction{{User: th.Members[0].ID, Emoji: "❤️", ID: "r1"}}
+	if r := got.Messages[len(got.Messages)-1].Reactions; !reflect.DeepEqual(r, want) {
+		t.Errorf("reactions = %v, want %v", r, want)
 	}
 	if p.failed {
 		t.Error("a write failed")
@@ -528,5 +535,25 @@ func TestSnapshotKeepsTheCachedUsername(t *testing.T) {
 	}
 	if got, _, err := st.Snapshot(ctx, 0); err != nil || got != cached {
 		t.Errorf("cache has %+v, %v; want %+v", got, err, cached)
+	}
+}
+
+func TestReactionRemovalIsResolved(t *testing.T) {
+	p, _, _ := newTestPump(t)
+	ctx := context.Background()
+	p.apply(ctx, core.ReactionAdded{Thread: 101, Message: "mid.target", Reaction: core.Reaction{User: 7, Emoji: "😂", ID: "r1"}})
+
+	// The service can name only the reaction's ID, with another message ID.
+	got := p.apply(ctx, core.ReactionRemoved{Thread: 101, Message: "mid.delete", ID: "r1"})
+	want := core.ReactionRemoved{Thread: 101, Message: "mid.target", User: 7, ID: "r1"}
+	if got != want {
+		t.Errorf("UI gets %v, want %v", got, want)
+	}
+	if got := p.apply(ctx, core.ReactionRemoved{Thread: 101, Message: "mid.delete", ID: "r1"}); got != nil {
+		t.Errorf("UI gets %v for an unknown reaction, want nothing", got)
+	}
+	known := core.ReactionRemoved{Thread: 101, Message: "mid.target", User: 7}
+	if got := p.apply(ctx, known); got != known {
+		t.Errorf("UI gets %v, want %v", got, known)
 	}
 }

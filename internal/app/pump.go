@@ -108,8 +108,9 @@ func (p *pump) run(ctx context.Context) {
 	}
 	p.sync(ctx)
 	for ev := range p.b.Events() {
-		p.apply(ctx, ev)
-		p.ui.Send(ev)
+		if ev := p.apply(ctx, ev); ev != nil {
+			p.ui.Send(ev)
+		}
 	}
 	// Login data can change without a SessionChanged, so save it once more.
 	if err := p.saveAuth(); err != nil {
@@ -150,22 +151,32 @@ func (p *pump) sync(ctx context.Context) {
 	}
 }
 
-// apply stores ev. A seq ID is saved only if every event before it was
-// stored.
-func (p *pump) apply(ctx context.Context, ev core.Event) {
+// apply stores ev and returns what the UI should see: ev, ev with what the
+// store resolved, or nil. A seq ID is saved only if every event before it
+// was stored.
+func (p *pump) apply(ctx context.Context, ev core.Event) core.Event {
 	var err error
-	switch ev := ev.(type) {
+	switch e := ev.(type) {
 	case core.MessageAdded:
-		err = p.st.AddMessage(ctx, ev.Message)
+		err = p.st.AddMessage(ctx, e.Message)
 	case core.ThreadUpdated:
-		err = p.st.PutThreads(ctx, []core.Thread{ev.Thread})
+		err = p.st.PutThreads(ctx, []core.Thread{e.Thread})
 	case core.ThreadRead:
-		err = p.st.MarkRead(ctx, ev.Thread, ev.Until)
+		err = p.st.MarkRead(ctx, e.Thread, e.Until)
 	case core.ReadReceipt:
-		err = p.st.PutReadReceipt(ctx, ev.Thread, ev.User, ev.UpTo)
+		err = p.st.PutReadReceipt(ctx, e.Thread, e.User, e.UpTo)
+	case core.ReactionAdded:
+		err = p.st.PutReaction(ctx, e.Message, e.Reaction)
+	case core.ReactionRemoved:
+		e.Message, e.User, err = p.st.RemoveReaction(ctx, e.Message, e.User, e.ID)
+		ev = e
+		if e.User == 0 {
+			p.log.Debug().Msg("removal of an unknown reaction dropped")
+			ev = nil
+		}
 	case core.SeqAdvanced:
 		if !p.failed {
-			p.session.SeqID, p.session.SeqAt = ev.SeqID, ev.At
+			p.session.SeqID, p.session.SeqAt = e.SeqID, e.At
 			if err := p.saveSession(); err != nil {
 				p.report(ctx, err)
 			}
@@ -183,6 +194,7 @@ func (p *pump) apply(ctx context.Context, ev core.Event) {
 	if err != nil {
 		p.writeFailed(ctx, err)
 	}
+	return ev
 }
 
 // saveAuth saves the backend's current login data with the seq ID.
