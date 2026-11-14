@@ -61,6 +61,7 @@ type upstream interface {
 	MarkRead(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadResponse, error)
 	MarkReadValidation(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadValidationResponse, error)
 	SetTyping(context.Context, string, bool) error
+	SendReaction(context.Context, *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error)
 	Connect(context.Context)
 	ForceReconnect()
 	Disconnect()
@@ -353,6 +354,33 @@ func (b *Backend) MarkRead(ctx context.Context, upTo core.Message) error {
 		Data:     slidetypes.MarkReadData{MessageID: string(upTo.ID), MessageTimestampMS: jsontime.UnixMilliString{Time: upTo.At}},
 	}); err != nil {
 		return fmt.Errorf("mark read: %w", coreError(err))
+	}
+	return nil
+}
+
+// React sets or clears the user's reaction to msg. Instagram names the
+// reaction being cleared, so a removal passes its emoji too. The result
+// arrives as a ReactionAdded or ReactionRemoved delta.
+func (b *Backend) React(ctx context.Context, thread core.ThreadID, msg core.MessageID, emoji string, remove bool) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	ids, err := b.idsFor(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	status := slidetypes.ReactionStatusCreated
+	if remove {
+		status = slidetypes.ReactionStatusDeleted
+	}
+	if _, err := client.SendReaction(ctx, &slidetypes.CreateReactionRequest{Input: slidetypes.ReactionInput{
+		Emoji:          emoji,
+		MessageID:      string(msg),
+		ReactionStatus: status,
+		ThreadID:       ids.short,
+	}}); err != nil {
+		return fmt.Errorf("react: %w", coreError(err))
 	}
 	return nil
 }

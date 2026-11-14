@@ -50,7 +50,8 @@ The same ID goes by different names in different places. Trust this table, not G
 | `FetchThreadID(ctx, int64)` | the other user's FBID (= 1:1 key) | `{LongID, ShortID}` or `ErrThreadNotFound` | yes for 1:1; not tried with a group key |
 | `GetUserForNewDM(ctx, fbid)` | FBID | user info | yes |
 | `SetTyping(ctx, id, bool)` | short (per upstream) | — | yes, shows and stops on the phone |
-| `SendReaction`, `EditMessage`, `UnsendMessage` | — | — | no (Phase 3) |
+| `SendReaction` (`Input.ThreadID`, `Input.MessageID`) | short (per upstream); a removal sends the old emoji with status `deleted` | the message's reactions | no |
+| `EditMessage`, `UnsendMessage` | — | — | no (Phase 3) |
 
 **We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead` and to recognise incoming typing.
 
@@ -117,7 +118,7 @@ All three paths in AGENTS §6.5 worked:
 
 - **End-to-end encrypted chats:** the test phone offered no way to start one. Upstream doesn't support them (AGENTS §15). If a thread with an unfamiliar subtype or `input_mode` shows up, label it instead of failing.
 - **Message requests:** `PaginateMailbox` for folder `PENDING` returned nothing because no request existed. Revisit in Phase 3 with an account the test account doesn't follow.
-- Reactions, edits and unsends (Phase 3).
+- Reactions: sending with the short ID, whether our own reaction echoes as a `CreateReaction` delta, and whether a removal's `message_id` is the target message. Edits and unsends (Phase 3).
 - Edits, unsends and read receipts in a 1:1.
 - Replies: `replied_to_message_id` and the embedded `replied_to_message` are read from upstream's types, not seen in a recorded payload. Is the ID the `mid.$…` form, and is the copy missing once the original is unsent? Sending sets only `ReplyToMessageID`, as upstream does.
 - `FetchThreadID` with a group key.

@@ -257,6 +257,63 @@ func TestSendReply(t *testing.T) {
 	}
 }
 
+func TestReact(t *testing.T) {
+	b := newBackend(t, Options{})
+	_, threads, _ := b.Snapshot(t.Context())
+	th := threads[0]
+	seeded := false
+	for _, m := range th.Messages {
+		seeded = seeded || len(m.Reactions) > 0
+	}
+	if !seeded {
+		t.Error("no canned reactions in the newest messages")
+	}
+	msg := th.Messages[len(th.Messages)-1]
+	ownReaction := func() string {
+		t.Helper()
+		page, _, _ := b.History(t.Context(), th.ID, "", 1)
+		for _, r := range page[0].Reactions {
+			if r.User == me.ID {
+				return r.Emoji
+			}
+		}
+		return ""
+	}
+
+	for _, emoji := range []string{"❤️", "😂"} {
+		if err := b.React(t.Context(), th.ID, msg.ID, emoji, false); err != nil {
+			t.Fatal(err)
+		}
+		added, ok := next(t, b).(core.ReactionAdded)
+		if !ok || added.Message != msg.ID || added.Reaction.User != me.ID || added.Reaction.Emoji != emoji || added.Reaction.ID == "" {
+			t.Fatalf("echo = %+v", added)
+		}
+		if _, ok := next(t, b).(core.SeqAdvanced); !ok {
+			t.Fatal("no SeqAdvanced after the echo")
+		}
+		if got := ownReaction(); got != emoji {
+			t.Fatalf("own reaction = %q, want %q", got, emoji)
+		}
+	}
+	if !reflect.DeepEqual(th.Messages[len(th.Messages)-1], msg) {
+		t.Error("React changed a message Snapshot returned")
+	}
+
+	if err := b.React(t.Context(), th.ID, msg.ID, "😂", true); err != nil {
+		t.Fatal(err)
+	}
+	if removed, ok := next(t, b).(core.ReactionRemoved); !ok || removed != (core.ReactionRemoved{Thread: th.ID, Message: msg.ID, User: me.ID}) {
+		t.Fatalf("echo = %+v", removed)
+	}
+	next(t, b)
+	if got := ownReaction(); got != "" {
+		t.Fatalf("own reaction %q after removal", got)
+	}
+	if err := b.React(t.Context(), th.ID, "mid.nope", "❤️", false); err == nil {
+		t.Error("reaction to an unknown message accepted")
+	}
+}
+
 func TestReadAfter(t *testing.T) {
 	b := newBackend(t, Options{ReadAfter: time.Millisecond})
 	_, threads, _ := b.Snapshot(t.Context())

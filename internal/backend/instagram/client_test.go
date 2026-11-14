@@ -186,6 +186,10 @@ func (f *fakeUpstream) MarkReadValidation(_ context.Context, req *slidetypes.Mar
 	return &slidetypes.MarkReadValidationResponse{}, f.call("MarkReadValidation", req)
 }
 
+func (f *fakeUpstream) SendReaction(_ context.Context, req *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error) {
+	return &slidetypes.SendReactionResponse{}, f.call("SendReaction", req)
+}
+
 func (f *fakeUpstream) SetTyping(_ context.Context, short string, typing bool) error {
 	return f.call(fmt.Sprint("SetTyping ", short, " ", typing), nil)
 }
@@ -419,6 +423,14 @@ func TestDeltas(t *testing.T) {
 		{name: "read receipt in an unknown thread", delta: `{"__typename":"SlideUQPPReadReceipt","thread_fbid":"3400000000000008","read_receipt":{"participant_fbid":"1","watermark_timestamp_ms":"1767225800000"}}`},
 		{name: "rename fetches the thread", delta: `{"__typename":"SlideUQPPThreadName","thread_fbid":"3400000000000002","thread_name":"Meow Club"}`,
 			want: []core.Event{core.ThreadUpdated{Thread: renamed}}, calls: []string{"GetThread 3400000000000002"}},
+		{name: "reaction", delta: fmt.Sprintf(`{"__typename":"SlideUQPPCreateReaction","thread_fbid":"3400000000000002","message_id":"mid.$live4","reaction":{"log_message_id":"mid.$r1","reaction":"❤️","sender_fbid":"%d"}}`, bob.ID),
+			want: []core.Event{core.ReactionAdded{Thread: 3400000000000002, Message: "mid.$live4", Reaction: core.Reaction{User: bob.ID, Emoji: "❤️", ID: "mid.$r1"}}}},
+		{name: "reaction without a sender", delta: `{"__typename":"SlideUQPPCreateReaction","thread_fbid":"3400000000000002","message_id":"mid.$live4","reaction":{"reaction":"❤️"}}`},
+		{name: "reaction in an unknown thread", delta: fmt.Sprintf(`{"__typename":"SlideUQPPCreateReaction","thread_fbid":"3400000000000008","message_id":"mid.$x","reaction":{"reaction":"❤️","sender_fbid":"%d"}}`, bob.ID)},
+		{name: "reaction removed", delta: fmt.Sprintf(`{"__typename":"SlideUQPPDeleteReaction","thread_fbid":"3400000000000002","message_id":"mid.$live4","reaction":{"log_message_id":"mid.$r1","sender_fbid":"%d"}}`, bob.ID),
+			want: []core.Event{core.ReactionRemoved{Thread: 3400000000000002, Message: "mid.$live4", User: bob.ID, ID: "mid.$r1"}}},
+		{name: "reaction removed, known only by its ID", delta: `{"__typename":"SlideUQPPDeleteReaction","thread_fbid":"3400000000000002","message_id":"mid.$delete","reaction":{"log_message_id":"mid.$r1"}}`,
+			want: []core.Event{core.ReactionRemoved{Thread: 3400000000000002, Message: "mid.$delete", ID: "mid.$r1"}}},
 		{name: "no thread", delta: `{"__typename":"SlideUQPPCreate1To1Thread","thread_fbid":""}`},
 		{name: "unknown type", delta: `{"__typename":"SlideUQPPSomethingNew","thread_fbid":"3400000000000001"}`},
 		{name: "a thread termeownal can't show", delta: newMessage("mid.$live5", "3400000000000007", "3400000000000007", dave.ID),
@@ -755,6 +767,19 @@ func TestSendAndMarkRead(t *testing.T) {
 	}
 	if got := reqs[1].(*slidetypes.MarkReadRequest).Data.MessageTimestampMS.Time; !got.Equal(at) {
 		t.Fatalf("validation timestamp = %v", got)
+	}
+
+	for _, remove := range []bool{false, true} {
+		if err := b.React(t.Context(), thread, "mid.$fake1a", "❤️", remove); err != nil {
+			t.Fatal(err)
+		}
+		want := slidetypes.ReactionInput{Emoji: "❤️", MessageID: "mid.$fake1a", ReactionStatus: slidetypes.ReactionStatusCreated, ThreadID: "3400000000000001"}
+		if remove {
+			want.ReactionStatus = slidetypes.ReactionStatusDeleted
+		}
+		if _, reqs := f.takeCalls(); reqs[0].(*slidetypes.CreateReactionRequest).Input != want {
+			t.Fatalf("react = %+v, want %+v", reqs[0], want)
+		}
 	}
 
 	f.fail["SendMessage"] = httpclient.ErrRateLimited

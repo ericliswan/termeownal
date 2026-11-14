@@ -46,6 +46,11 @@ type Backend interface {
 	// MarkRead marks upTo's thread read up to and including upTo.
 	MarkRead(ctx context.Context, upTo Message) error
 
+	// React sets the user's reaction to msg, replacing any other, or with
+	// remove clears it; emoji is then the reaction being cleared. It arrives
+	// back as a ReactionAdded or ReactionRemoved.
+	React(ctx context.Context, thread ThreadID, msg MessageID, emoji string, remove bool) error
+
 	// Typing tells thread's members whether the user is typing. Without a
 	// stop, they stop seeing it a few seconds after the last start.
 	Typing(ctx context.Context, thread ThreadID, active bool) error

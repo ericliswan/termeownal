@@ -166,6 +166,17 @@ func (b *Backend) handleDelta(ctx context.Context, d *slidetypes.Delta) error {
 		if known {
 			return b.sendReceipt(ctx, key, data.ReadReceipt)
 		}
+	case *slidetypes.CreateReactionEvent:
+		if r, ok := convertReaction(&data.Reaction); ok && known {
+			return b.send(ctx, core.ReactionAdded{Thread: key, Message: core.MessageID(data.MessageID), Reaction: r})
+		}
+	case *slidetypes.DeleteReactionEvent:
+		// The sender may be 0 and message_id another ID: the app then finds
+		// the reaction by its log_message_id (docs/ids.md §4).
+		if known {
+			r := data.Reaction
+			return b.send(ctx, core.ReactionRemoved{Thread: key, Message: core.MessageID(data.MessageID), User: core.UserID(r.SenderFBID), ID: r.LogMessageID})
+		}
 	default:
 		b.log.Debug().Str("type", d.TypeName).Msg("delta ignored")
 	}

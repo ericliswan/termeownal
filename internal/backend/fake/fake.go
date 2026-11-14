@@ -205,6 +205,39 @@ func (b *Backend) Send(_ context.Context, thread core.ThreadID, text, otid strin
 	})
 }
 
+// React sets the user's reaction to msg, or with remove clears it, and
+// queues the echo after EchoDelay.
+func (b *Backend) React(_ context.Context, thread core.ThreadID, msg core.MessageID, emoji string, remove bool) error {
+	if emoji == "" {
+		return errors.New("fake: react: empty emoji")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, err := b.threadLocked(thread)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(t.history, func(m core.Message) bool { return m.ID == msg })
+	if i < 0 {
+		return fmt.Errorf("fake: react: unknown message %q", msg)
+	}
+	// A new slice, since Snapshot and History hand out shallow copies.
+	rs := slices.DeleteFunc(slices.Clone(t.history[i].Reactions), func(r core.Reaction) bool { return r.User == me.ID })
+	var echo core.Event = core.ReactionRemoved{Thread: thread, Message: msg, User: me.ID}
+	if !remove {
+		b.nextMID++
+		r := core.Reaction{User: me.ID, Emoji: emoji, ID: fmt.Sprintf("mid.$fakereaction.%d", b.nextMID)}
+		rs = append(rs, r)
+		echo = core.ReactionAdded{Thread: thread, Message: msg, Reaction: r}
+	}
+	t.history[i].Reactions = rs
+	return b.goLocked(func() {
+		if b.sleep(b.opts.EchoDelay) {
+			_ = b.emitDelta(b.ctx, echo)
+		}
+	})
+}
+
 // sleep waits for d, or returns false once Close is called.
 func (b *Backend) sleep(d time.Duration) bool {
 	select {

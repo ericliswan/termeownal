@@ -105,6 +105,9 @@ type seedThread struct {
 	history []core.Message
 }
 
+// reactions are the emoji the canned threads react with.
+var reactions = []string{"❤️", "😂", "👍", "😮"}
+
 // seedData builds the canned threads. The same now gives the same data.
 func seedData(now time.Time) []*seedThread {
 	rng := rand.New(rand.NewPCG(1, 2))
@@ -159,6 +162,13 @@ func seedData(now time.Time) []*seedThread {
 			m, to := &t.history[k], t.history[k-3]
 			if k%23 == 22 && m.ContentType == contentText && to.ContentType != contentReactionLog {
 				m.ReplyTo = quote(to)
+			}
+			if k%13 == 12 && m.ContentType != contentReactionLog {
+				u := t.Members[k%len(t.Members)].ID
+				if u == m.Sender {
+					u = me.ID
+				}
+				m.Reactions = []core.Reaction{{User: u, Emoji: reactions[k%len(reactions)], ID: fmt.Sprintf("mid.$fakereaction%d.%d", i, k)}}
 			}
 		}
 		// Member j has read all but the last j messages.
