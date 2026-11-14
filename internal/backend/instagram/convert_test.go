@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"os"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -130,5 +131,17 @@ func TestConvertReplyWithoutCopy(t *testing.T) {
 	got, _ := convertMessage(&slidetypes.Message{ID: "mid.$x", RepliedToMessageID: "mid.$gone"}, 1, zerolog.Nop())
 	if got.ReplyTo != (core.Quote{ID: "mid.$gone"}) {
 		t.Errorf("ReplyTo = %+v", got.ReplyTo)
+	}
+}
+
+func TestConvertReactions(t *testing.T) {
+	got, _ := convertMessage(&slidetypes.Message{ID: "mid.$x", Reactions: []*slidetypes.Reaction{
+		{LogMessageID: "mid.$r1", Reaction: "😂", SenderFBID: 7},
+		nil,
+		{LogMessageID: "mid.$r2", Reaction: "😂"},
+		{LogMessageID: "mid.$r3", SenderFBID: 8},
+	}}, 1, zerolog.Nop())
+	if want := []core.Reaction{{User: 7, Emoji: "😂", ID: "mid.$r1"}}; !slices.Equal(got.Reactions, want) {
+		t.Errorf("Reactions = %+v, want %+v", got.Reactions, want)
 	}
 }

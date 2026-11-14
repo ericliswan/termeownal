@@ -138,5 +138,19 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 			out.ReplyTo.ContentType = q.ContentType
 		}
 	}
+	for _, r := range m.Reactions {
+		if r, ok := convertReaction(r); ok {
+			out.Reactions = append(out.Reactions, r)
+		}
+	}
 	return out, true
+}
+
+// convertReaction converts a reaction, reporting false if it lacks a sender
+// or an emoji.
+func convertReaction(r *slidetypes.Reaction) (core.Reaction, bool) {
+	if r == nil || r.SenderFBID == 0 || r.Reaction == "" {
+		return core.Reaction{}, false
+	}
+	return core.Reaction{User: core.UserID(r.SenderFBID), Emoji: r.Reaction, ID: r.LogMessageID}, true
 }
