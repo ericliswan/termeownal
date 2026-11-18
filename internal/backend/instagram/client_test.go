@@ -787,7 +787,8 @@ func TestSendAndMarkRead(t *testing.T) {
 		if err := b.React(t.Context(), thread, "mid.$fake1a", "❤️", remove); err != nil {
 			t.Fatal(err)
 		}
-		want := slidetypes.ReactionInput{Emoji: "❤️", MessageID: "mid.$fake1a", ReactionStatus: slidetypes.ReactionStatusCreated, ThreadID: "3400000000000001"}
+		// sent without U+FE0F, as upstream sends it
+		want := slidetypes.ReactionInput{Emoji: "❤", MessageID: "mid.$fake1a", ReactionStatus: slidetypes.ReactionStatusCreated, ThreadID: "3400000000000001"}
 		if remove {
 			want.ReactionStatus = slidetypes.ReactionStatusDeleted
 		}

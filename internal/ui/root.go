@@ -34,6 +34,7 @@ import (
 	"termeownal/internal/core"
 	"termeownal/internal/ui/chat"
 	"termeownal/internal/ui/composer"
+	"termeownal/internal/ui/emoji"
 	"termeownal/internal/ui/overlay"
 	"termeownal/internal/ui/theme"
 	"termeownal/internal/ui/threadlist"
@@ -650,18 +651,18 @@ func (m *Model) replyOrRetry(id core.ThreadID) tea.Cmd {
 	return nil // still sending: it has no ID to reply to yet
 }
 
-// react sets the user's reaction to msg to emoji, or clears it if it is
-// emoji already, showing the change before the service confirms it.
-func (m *Model) react(msg core.Message, emoji string) tea.Cmd {
+// react sets the user's reaction to msg to picked, or clears it if it is
+// picked already, showing the change before the service confirms it.
+func (m *Model) react(msg core.Message, picked string) tea.Cmd {
 	prev := ownReaction(msg, m.me.ID)
-	remove := prev.Emoji == emoji
-	next := core.Reaction{User: m.me.ID, Emoji: emoji}
-	if remove {
+	next := core.Reaction{User: m.me.ID, Emoji: picked}
+	cmd := m.act.React(msg.Thread, msg.ID, picked, false)
+	if prev.Emoji != "" && emoji.Same(prev.Emoji, picked) {
 		next = core.Reaction{}
+		cmd = m.act.React(msg.Thread, msg.ID, prev.Emoji, true) // named as Instagram stored it
 	}
 	m.setReaction(msg.Thread, msg.ID, m.me.ID, next)
 	m.refresh()
-	cmd := m.act.React(msg.Thread, msg.ID, emoji, remove)
 	return func() tea.Msg {
 		if e, ok := cmd().(ErrorMsg); ok {
 			return reactFailedMsg{thread: msg.Thread, msg: msg.ID, prev: prev, err: e.Err}

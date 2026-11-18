@@ -46,6 +46,12 @@ func Lookup(name string) (string, bool) {
 	return c, ok
 }
 
+// Same reports whether a and b are the same emoji, ignoring the U+FE0F
+// variation selector: Instagram drops it, so its ❤ is the picker's ❤️.
+func Same(a, b string) bool {
+	return strings.ReplaceAll(a, "\uFE0F", "") == strings.ReplaceAll(b, "\uFE0F", "")
+}
+
 // Search returns up to n emoji whose names contain query, ignoring case:
 // names that start with it first, then shorter names first.
 func Search(query string, n int) []Emoji {

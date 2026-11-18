@@ -49,6 +49,9 @@ type backendActions struct {
 	sendErr error
 	// reactErr, while set, fails React.
 	reactErr error
+	// reacted and removed are the last React call's arguments.
+	reacted string
+	removed bool
 	// changeErr, while set, fails Edit and Unsend.
 	changeErr error
 	loads     int
@@ -97,6 +100,7 @@ func (a *backendActions) Typing(thread core.ThreadID, active bool) tea.Cmd {
 
 func (a *backendActions) React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd {
 	return func() tea.Msg {
+		a.reacted, a.removed = emoji, remove
 		err := a.reactErr
 		if err == nil {
 			err = a.b.React(context.Background(), thread, msg, emoji, remove)
@@ -464,6 +468,22 @@ func TestReactToSelectedMessage(t *testing.T) {
 	}
 	if ev, ok := h.nextEvent().(core.ReactionRemoved); !ok || ev.User != h.m.me.ID {
 		t.Fatalf("event = %+v, want the user's removal", ev)
+	}
+}
+
+// Instagram echoes a heart without the U+FE0F the picker's ❤️ has; picking
+// the heart again must still remove it, naming it as Instagram stored it.
+func TestUnreactVariationSelector(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab", "k")
+	sel, _ := h.m.chat.Selected()
+	h.do(core.ReactionAdded{Thread: sel.Thread, Message: sel.ID, Reaction: core.Reaction{User: h.m.me.ID, Emoji: "❤", ID: "mid.$r"}})
+	h.press("e", "enter")
+	if got := h.own(h.selectedReactions()); got != "" {
+		t.Fatalf("own reaction = %q, want it removed", got)
+	}
+	if h.act.reacted != "❤" || !h.act.removed {
+		t.Fatalf("React(%q, remove=%v), want a removal of ❤", h.act.reacted, h.act.removed)
 	}
 }
 

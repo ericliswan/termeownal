@@ -33,6 +33,7 @@ import (
 	"go.mau.fi/mautrix-meta/pkg/messagix/types"
 	"go.mau.fi/util/exhttp"
 	"go.mau.fi/util/jsontime"
+	"go.mau.fi/util/variationselector"
 
 	"termeownal/internal/core"
 )
@@ -377,7 +378,7 @@ func (b *Backend) React(ctx context.Context, thread core.ThreadID, msg core.Mess
 		status = slidetypes.ReactionStatusDeleted
 	}
 	if _, err := client.SendReaction(ctx, &slidetypes.CreateReactionRequest{Input: slidetypes.ReactionInput{
-		Emoji:          emoji,
+		Emoji:          variationselector.Remove(emoji), // as upstream sends it
 		MessageID:      string(msg),
 		ReactionStatus: status,
 		ThreadID:       ids.short,
