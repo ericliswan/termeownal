@@ -293,12 +293,16 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	events := []core.Event{
 		core.ThreadUpdated{Thread: th},
 		core.MessageAdded{Message: core.Message{ID: "mid.replayed", Thread: th.ID, Sender: th.Members[0].ID, At: at, Text: "hi"}},
+		core.MessageAdded{Message: core.Message{ID: "mid.unsent", Thread: th.ID, Sender: 1, At: at, Text: "oops"}},
 		core.ThreadRead{Thread: th.ID, Until: at},
 		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: at},
 		core.ReadReceipt{Thread: th.ID, User: th.Members[0].ID, UpTo: testNow}, // older, late
 		core.ReactionAdded{Thread: th.ID, Message: "mid.replayed", Reaction: core.Reaction{User: th.Members[0].ID, Emoji: "❤️", ID: "r1"}},
 		core.ReactionAdded{Thread: th.ID, Message: "mid.replayed", Reaction: core.Reaction{User: 1, Emoji: "👍", ID: "r2"}},
 		core.ReactionRemoved{Thread: th.ID, Message: "mid.delete", ID: "r2"},
+		core.MessageEdited{Thread: th.ID, Message: "mid.replayed", Text: "hi!", At: at.Add(2 * time.Second)},
+		core.MessageEdited{Thread: th.ID, Message: "mid.replayed", Text: "hi?", At: at.Add(time.Second)}, // older, late
+		core.MessageUnsent{Thread: th.ID, Message: "mid.unsent"},
 		core.SeqAdvanced{SeqID: 1, At: at},
 	}
 
@@ -322,9 +326,16 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	if upTo := got.ReadUpTo[th.Members[0].ID]; !upTo.Equal(at) {
 		t.Errorf("member read up to %v, want %v", upTo, at)
 	}
+	msgs := map[core.MessageID]core.Message{}
+	for _, m := range got.Messages {
+		msgs[m.ID] = m
+	}
 	want := []core.Reaction{{User: th.Members[0].ID, Emoji: "❤️", ID: "r1"}}
-	if r := got.Messages[len(got.Messages)-1].Reactions; !reflect.DeepEqual(r, want) {
-		t.Errorf("reactions = %v, want %v", r, want)
+	if m := msgs["mid.replayed"]; !reflect.DeepEqual(m.Reactions, want) || m.Text != "hi!" {
+		t.Errorf("message = %q with reactions %v, want %q with %v", m.Text, m.Reactions, "hi!", want)
+	}
+	if m := msgs["mid.unsent"]; !m.Unsent || m.Text != "" {
+		t.Errorf("unsent message = %+v", m)
 	}
 	if p.failed {
 		t.Error("a write failed")

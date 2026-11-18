@@ -19,6 +19,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -274,6 +275,20 @@ func TestMigration4KeepsOnlyLocalMessages(t *testing.T) {
 	}
 }
 
+func TestMigration5KeepsOnlyLocalMessages(t *testing.T) {
+	db := migrateTo(t, 5, `
+		INSERT INTO threads VALUES (2, 'Ana', 0, 3, 0, 1);
+		INSERT INTO messages (id, thread_key, sender_fbid, ts_ms, content_type, text, otid, send_state) VALUES
+			('mid.$sent', 2, 1, 3, 'TEXT', 'x', '', 0),
+			('local:o1', 2, 1, 4, 'TEXT', 'x', 'o1', 2)`)
+	if ids := column[string](t, db, "SELECT id FROM messages"); !slices.Equal(ids, []string{"local:o1"}) {
+		t.Errorf("ids = %q, want the unsent local copy", ids)
+	}
+	if done := column[bool](t, db, "SELECT history_complete FROM threads"); !slices.Equal(done, []bool{false}) {
+		t.Errorf("history_complete = %v, want false so history loads again", done)
+	}
+}
+
 func TestOpenRefusesNewerSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cache.db")
 	db, err := sql.Open("sqlite", path)
@@ -435,6 +450,8 @@ func TestReplayChangesNothing(t *testing.T) {
 			_, _, err := s.RemoveReaction(ctx, "a1", 0, "r0")
 			return err
 		},
+		func() error { return s.EditMessage(ctx, "a2", "edited", at(10)) },
+		func() error { return s.UnsendMessage(ctx, "a3") },
 		func() error { return s.AddMessage(ctx, msg("a4", dm, anaID, 4)) },
 		func() error { return s.AddMessage(ctx, local("o1", 5)) },
 		func() error { return s.FailUnsent(ctx) },
@@ -505,6 +522,49 @@ func TestReactions(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, step.want) {
 			t.Errorf("after %s: reactions = %v, want %v", step.name, got, step.want)
+		}
+	}
+}
+
+func TestEditsAndUnsends(t *testing.T) {
+	a1 := msg("a1", dm, anaID, 1)
+	a1.Reactions = []core.Reaction{{User: meID, Emoji: "👍", ID: "r1"}}
+	s := withDM(t, a1, msg("a2", dm, meID, 2))
+	ctx := t.Context()
+	edited := func(text string, min int) core.Message {
+		m := msg("a2", dm, meID, 2)
+		m.Text, m.EditedAt = text, at(min)
+		return m
+	}
+	type state struct {
+		a1 core.Message
+		a2 core.Message
+	}
+	unsent := core.Message{ID: "a1", Thread: dm, Sender: anaID, At: at(1), Unsent: true}
+	steps := []struct {
+		name string
+		do   func() error
+		want state
+	}{
+		{"edit", func() error { return s.EditMessage(ctx, "a2", "second", at(5)) }, state{a1, edited("second", 5)}},
+		{"older edit", func() error { return s.EditMessage(ctx, "a2", "first", at(4)) }, state{a1, edited("second", 5)}},
+		{"page with older edit", func() error {
+			return s.PutHistory(ctx, dm, "", []core.Message{a1, edited("first", 4)}, true)
+		}, state{a1, edited("second", 5)}},
+		{"page with newer edit", func() error {
+			return s.PutHistory(ctx, dm, "", []core.Message{a1, edited("third", 6)}, true)
+		}, state{a1, edited("third", 6)}},
+		{"unsend", func() error { return s.UnsendMessage(ctx, "a1") }, state{unsent, edited("third", 6)}},
+		{"edit after unsend", func() error { return s.EditMessage(ctx, "a1", "back", at(7)) }, state{unsent, edited("third", 6)}},
+		{"unknown message", func() error {
+			return errors.Join(s.EditMessage(ctx, "x", "x", at(8)), s.UnsendMessage(ctx, "x"))
+		}, state{unsent, edited("third", 6)}},
+	}
+	for _, step := range steps {
+		must(t, step.do())
+		got := history(t, s, dm)
+		if want := []core.Message{step.want.a1, step.want.a2}; !reflect.DeepEqual(got, want) {
+			t.Errorf("after %s:\n got %+v\nwant %+v", step.name, got, want)
 		}
 	}
 }

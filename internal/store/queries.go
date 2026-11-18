@@ -35,7 +35,7 @@ import (
 const notMe = "sender_fbid IS NOT (SELECT fbid FROM account)"
 
 const messageCols = "id, thread_key, sender_fbid, ts_ms, content_type, text, otid, send_state, " +
-	"reply_to_id, reply_sender_fbid, reply_text, reply_content_type"
+	"reply_to_id, reply_sender_fbid, reply_text, reply_content_type, edited_at_ms, unsent"
 
 // Snapshot returns the cached account (the zero User if none) and every
 // cached thread, most recently active first, each with its newest n messages,
@@ -248,10 +248,10 @@ func putMessage(ctx context.Context, tx *sql.Tx, m core.Message) (bool, error) {
 		}
 	}
 	res, err := tx.ExecContext(ctx, `
-		INSERT INTO messages (`+messageCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO messages (`+messageCols+`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO NOTHING`,
 		m.ID, m.Thread, m.Sender, m.At.UnixMilli(), m.ContentType, m.Text, m.OTID, m.State,
-		m.ReplyTo.ID, m.ReplyTo.Sender, m.ReplyTo.Text, m.ReplyTo.ContentType)
+		m.ReplyTo.ID, m.ReplyTo.Sender, m.ReplyTo.Text, m.ReplyTo.ContentType, editedMS(m.EditedAt), m.Unsent)
 	if err != nil {
 		return false, err
 	}
@@ -271,6 +271,11 @@ func putMessage(ctx context.Context, tx *sql.Tx, m core.Message) (bool, error) {
 func putServerMessage(ctx context.Context, tx *sql.Tx, m core.Message) error {
 	if _, err := putMessage(ctx, tx, m); err != nil {
 		return err
+	}
+	if !m.EditedAt.IsZero() {
+		if err := editMessage(ctx, tx, m.ID, m.Text, m.EditedAt); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.ExecContext(ctx, "DELETE FROM reactions WHERE message_id = ?", m.ID); err != nil {
 		return err
@@ -294,6 +299,48 @@ func putReaction(ctx context.Context, tx execer, msg core.MessageID, r core.Reac
 // execer is a *sql.DB or a *sql.Tx.
 type execer interface {
 	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// editedMS is t in Unix milliseconds, or 0 for the zero time (not edited).
+func editedMS(t time.Time) int64 {
+	if t.IsZero() {
+		return 0
+	}
+	return t.UnixMilli()
+}
+
+func editMessage(ctx context.Context, tx execer, msg core.MessageID, text string, at time.Time) error {
+	// <= rather than <, so an edit replayed with the same time is harmless,
+	// while an older one never undoes a newer one.
+	_, err := tx.ExecContext(ctx, "UPDATE messages SET text = ?1, edited_at_ms = ?2 WHERE id = ?3 AND edited_at_ms <= ?2 AND NOT unsent",
+		text, editedMS(at), msg)
+	return err
+}
+
+// EditMessage changes a cached message's text, unless it was unsent or a
+// newer edit is cached.
+func (s *Store) EditMessage(ctx context.Context, msg core.MessageID, text string, at time.Time) error {
+	if err := editMessage(ctx, s.db, msg, text, at); err != nil {
+		return fmt.Errorf("cache edit: %w", err)
+	}
+	return nil
+}
+
+// UnsendMessage marks a cached message unsent and forgets its content and
+// reactions.
+func (s *Store) UnsendMessage(ctx context.Context, msg core.MessageID) error {
+	err := inTx(ctx, s.db, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "UPDATE messages SET text = '', content_type = '', unsent = 1 WHERE id = ?", msg)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, "DELETE FROM reactions WHERE message_id = ?", msg)
+		return err
+	})
+	if err != nil {
+		return fmt.Errorf("cache unsend: %w", err)
+	}
+	return nil
 }
 
 // PutReaction stores member r.User's reaction to message msg, replacing
@@ -472,13 +519,16 @@ func messagesBefore(ctx context.Context, tx *sql.Tx, thread core.ThreadID, befor
 	var msgs []core.Message
 	for rows.Next() {
 		var m core.Message
-		var ms int64
+		var ms, editMS int64
 		q := &m.ReplyTo
 		if err := rows.Scan(&m.ID, &m.Thread, &m.Sender, &ms, &m.ContentType, &m.Text, &m.OTID, &m.State,
-			&q.ID, &q.Sender, &q.Text, &q.ContentType); err != nil {
+			&q.ID, &q.Sender, &q.Text, &q.ContentType, &editMS, &m.Unsent); err != nil {
 			return nil, err
 		}
 		m.At = time.UnixMilli(ms)
+		if editMS != 0 {
+			m.EditedAt = time.UnixMilli(editMS)
+		}
 		msgs = append(msgs, m)
 	}
 	if err := errors.Join(rows.Err(), rows.Close()); err != nil {

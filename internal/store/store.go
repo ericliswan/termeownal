@@ -105,6 +105,12 @@ var migrations = []string{
 	CREATE INDEX reactions_by_log_id ON reactions (log_message_id);
 	DELETE FROM messages WHERE send_state = 0;
 	UPDATE threads SET history_complete = 0;`,
+	// 5: edits and unsends. Cached messages are dropped so they load again
+	// marked as edited.
+	`ALTER TABLE messages ADD COLUMN edited_at_ms INTEGER NOT NULL DEFAULT 0;
+	ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0;
+	DELETE FROM messages WHERE send_state = 0;
+	UPDATE threads SET history_complete = 0;`,
 }
 
 // tables lists every table, for emptying the cache when the account changes.

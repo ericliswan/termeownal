@@ -88,6 +88,21 @@ type ReactionRemoved struct {
 	ID      string
 }
 
+// MessageEdited means message Message's sender changed its text to Text at
+// At. An edit older than the message's EditedAt is stale: ignore it.
+type MessageEdited struct {
+	Thread  ThreadID
+	Message MessageID
+	Text    string
+	At      time.Time
+}
+
+// MessageUnsent means message Message's sender took it back.
+type MessageUnsent struct {
+	Thread  ThreadID
+	Message MessageID
+}
+
 // ThreadUpdated carries a thread's current details. It comes before the
 // first event for a thread the backend hadn't reported yet.
 type ThreadUpdated struct{ Thread Thread }
@@ -111,6 +126,8 @@ func (ReadReceipt) event()     {}
 func (Typing) event()          {}
 func (ReactionAdded) event()   {}
 func (ReactionRemoved) event() {}
+func (MessageEdited) event()   {}
+func (MessageUnsent) event()   {}
 func (ThreadUpdated) event()   {}
 func (SeqAdvanced) event()     {}
 func (SessionChanged) event()  {}
