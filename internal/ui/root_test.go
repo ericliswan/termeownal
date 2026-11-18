@@ -53,7 +53,7 @@ type backendActions struct {
 	// reacted and removed are the last React call's arguments.
 	reacted string
 	removed bool
-	// changeErr, while set, fails Edit and Unsend.
+	// changeErr, while set, fails Edit, Unsend and Mute.
 	changeErr error
 	loads     int
 	sent      []core.Message
@@ -120,6 +120,10 @@ func (a *backendActions) Edit(thread core.ThreadID, msg core.MessageID, text str
 
 func (a *backendActions) Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd {
 	return a.call(func() error { return a.b.Unsend(context.Background(), thread, msg) })
+}
+
+func (a *backendActions) Mute(thread core.ThreadID, muted bool) tea.Cmd {
+	return a.call(func() error { return a.b.Mute(context.Background(), thread, muted) })
 }
 
 func (a *backendActions) Notify(title, body string) tea.Cmd {
@@ -842,9 +846,11 @@ func TestNotifyOnlyWhenNotSeen(t *testing.T) {
 	h := newHarness(t, 100, 30)
 	h.press("enter")
 	open, _ := h.m.chat.Thread()
-	var other, group core.ThreadID
+	var other, group, muted core.ThreadID
 	for id, st := range h.m.threads {
 		switch {
+		case st.Muted:
+			muted = id
 		case st.IsGroup:
 			group = id
 		case id != open:
@@ -862,6 +868,7 @@ func TestNotifyOnlyWhenNotSeen(t *testing.T) {
 	add("mid.mine", other, h.m.me.ID, testNow)
 	add("mid.old", other, 101, testNow.Add(-2*time.Minute))
 	add("mid.group", group, from.ID, testNow)
+	add("mid.muted", muted, 101, testNow)
 	h.do(tea.BlurMsg{})
 	add("mid.blurred", open, 101, testNow)
 
@@ -873,6 +880,32 @@ func TestNotifyOnlyWhenNotSeen(t *testing.T) {
 	}
 	if !slices.Equal(h.act.notified, want) {
 		t.Fatalf("notified %q, want %q", h.act.notified, want)
+	}
+}
+
+func TestMute(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	id, _ := h.m.list.Selected()
+	h.press("m")
+	if !h.m.threads[id].Muted || !strings.Contains(h.screen(), "muted ·") {
+		t.Fatalf("not muted after m:\n%s", h.screen())
+	}
+	if e := h.nextEvent(); e != (core.ThreadMuted{Thread: id, Muted: true}) {
+		t.Fatalf("backend got %#v, want a mute", e)
+	}
+	h.do(core.ThreadUpdated{Thread: core.Thread{ID: id, Title: "renamed"}})
+	if !h.m.threads[id].Muted {
+		t.Fatal("a ThreadUpdated unmuted the thread")
+	}
+	h.do(core.ThreadMuted{Thread: id}) // unmuted on another device
+	if h.m.threads[id].Muted {
+		t.Fatal("still muted after ThreadMuted{Muted: false}")
+	}
+
+	h.act.changeErr = errors.New("mute: boom")
+	h.press("m")
+	if h.m.threads[id].Muted || !strings.Contains(h.screen(), "boom") {
+		t.Fatalf("a failed mute should unmute again and show the error:\n%s", h.screen())
 	}
 }
 

@@ -1,21 +1,21 @@
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓╭─────────────────────────────────────────────────────────────────╮
 ┃▌ ● Priya                 13:51┃│                                                                 │
 ┃▌   haha yes                   ┃│                                                                 │
-┃                               ┃│                                                                 │
-┃  ● COMP200┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓           │
-┃    wait wh┃                                                                          ┃           │
-┃           ┃  Keys                                                                    ┃           │
-┃    Tom    ┃                                                                          ┃           │
-┃    ok     ┃  Tab / Shift+Tab   move focus                                            ┃           │
-┃           ┃  j k ↑ ↓           move; select a message                                ┃           │
-┃    James, ┃  Enter             open thread / send                                    ┃           │
-┃    ok     ┃  Alt+Enter         new line in message                                   ┃           │
-┃           ┃  :heart:           emoji; after :he, Tab or Enter picks                  ┃           │
-┃  ● Aisha  ┃  g / G             top / bottom                                          ┃           │
-┃    😭😭😭 ┃  PgUp              page up; at the top, load older                       ┃           │
-┃           ┃  r                 reply to the message, or resend if it failed          ┃           │
-┃    Dan    ┃  e                 react to the message                                  ┃           │
-┃    You: br┃  E / d             edit / unsend your message                            ┃           │
+┃           ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓           │
+┃  ● COMP200┃                                                                          ┃           │
+┃    wait wh┃  Keys                                                                    ┃           │
+┃           ┃                                                                          ┃           │
+┃    Tom    ┃  Tab / Shift+Tab   move focus                                            ┃           │
+┃    ok     ┃  j k ↑ ↓           move; select a message                                ┃           │
+┃           ┃  Enter             open thread / send                                    ┃           │
+┃    James, ┃  Alt+Enter         new line in message                                   ┃           │
+┃    ok     ┃  :heart:           emoji; after :he, Tab or Enter picks                  ┃           │
+┃           ┃  g / G             top / bottom                                          ┃           │
+┃  ● Aisha  ┃  PgUp              page up; at the top, load older                       ┃           │
+┃    😭😭😭 ┃  r                 reply to the message, or resend if it failed          ┃           │
+┃           ┃  e                 react to the message                                  ┃           │
+┃    Dan    ┃  E / d             edit / unsend your message                            ┃           │
+┃    You: br┃  m                 in the thread list, mute or unmute the thread         ┃           │
 ┃           ┃  Esc               cancel the reply or edit, or back to the thread list  ┃           │
 ┃    Film So┃  ?                 this help                                             ┃           │
 ┃    ok     ┃  Ctrl+C            quit                                                  ┃           │

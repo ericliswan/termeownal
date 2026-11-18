@@ -109,9 +109,15 @@ func (d delegate) Render(w io.Writer, m list.Model, index int, li list.Item) {
 	title := it.Thread.Title
 	if it.Thread.Unread {
 		mark = theme.Title.Render("● ")
-		title = theme.Bold.Render(title)
 	}
 	when := FormatTime(it.Thread.LastActivity, d.now())
+	switch {
+	case it.Thread.Muted:
+		title = theme.Dim.Render(title)
+		when = "muted · " + when // dimming alone is lost under NO_COLOR
+	case it.Thread.Unread:
+		title = theme.Bold.Render(title)
+	}
 	room := m.Width() - 4 - lipgloss.Width(when) - 1
 	title = ansi.Truncate(title, max(room, 0), "…")
 	gap := strings.Repeat(" ", max(room-lipgloss.Width(title), 0)+1)

@@ -36,6 +36,7 @@ var helpKeys = [][2]string{
 	{"r", "reply to the message, or resend if it failed"},
 	{"e", "react to the message"},
 	{"E / d", "edit / unsend your message"},
+	{"m", "in the thread list, mute or unmute the thread"},
 	{"Esc", "cancel the reply or edit, or back to the thread list"},
 	{"?", "this help"},
 	{"Ctrl+C", "quit"},
