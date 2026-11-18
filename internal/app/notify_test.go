@@ -70,10 +70,13 @@ func TestNotifyIsSafeAndFollowsTheSetting(t *testing.T) {
 		}
 		return msg.Msg.(string)
 	}
-	if got := raw(actions{}, "Ann", "secret"); strings.Contains(got, "secret") {
+	if cmd := (actions{}).Notify("Ann", "hi"); cmd != nil {
+		t.Error("notify off, still notified")
+	}
+	if got := raw(actions{notify: true}, "Ann", "secret"); strings.Contains(got, "secret") {
 		t.Errorf("notify_preview off, sent %q", got)
 	}
-	got := raw(actions{notifyPreview: true}, "Ann\x07", "hi\x1b]9;x\x07"+strings.Repeat("a", 300))
+	got := raw(actions{notify: true, notifyPreview: true}, "Ann\x07", "hi\x1b]9;x\x07"+strings.Repeat("a", 300))
 	if strings.Count(got, "\x1b") != 1 || strings.Count(got, "\x07") != 1 || len([]rune(got)) > 2*maxNotify+10 {
 		t.Errorf("unsafe sequence %q", got)
 	}
