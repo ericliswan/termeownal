@@ -577,7 +577,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [ ] Send image from path (`/upload ~/pic.jpg` or `Ctrl+U` file prompt) via `SendMedia`.
 
 ### Phase 5 — Polish
-- [ ] Desktop notifications when the thread isn't focused (respect mute).
+- [x] Desktop notifications when the thread isn't focused (#81; pulled forward during Phase 3). Muted threads still notify until mute lands.
 - [ ] Themes + keybinding config.
 - [ ] Optional chat layout: your messages on the right, others' on the left (#61).
 - [ ] Settings panel: toggles for read receipts, typing, chat layout and notifications, saved to `config.toml` (#62).

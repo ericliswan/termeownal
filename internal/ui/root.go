@@ -78,6 +78,9 @@ type Actions interface {
 	// ErrorMsg if that fails, otherwise nil. It comes back as a
 	// core.MessageUnsent.
 	Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd
+	// Notify shows a desktop notification; returns nil. app may leave body
+	// out (notify_preview).
+	Notify(title, body string) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -369,8 +372,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refresh()
 		}
 	case core.MessageAdded:
+		seen := m.has(msg.Message.Thread, msg.Message.ID)
 		m.addMessage(msg.Message)
 		m.refresh()
+		if !seen {
+			return m, m.notify(msg.Message)
+		}
 	case core.ReactionAdded:
 		r := msg.Reaction
 		r.Emoji = cleanLine(r.Emoji)
@@ -605,11 +612,18 @@ func (m *Model) loadOlder(id core.ThreadID) tea.Cmd {
 	return m.act.History(id, st.Messages[0].ID, historyPage)
 }
 
+// onScreen reports whether thread id is open and on screen in a focused
+// terminal.
+func (m *Model) onScreen(id core.ThreadID) bool {
+	open, ok := m.chat.Thread()
+	return ok && open == id && !m.blurred && !m.help && m.width >= minWidth && m.height >= minHeight
+}
+
 // markRead marks the open thread read up to its newest message if it's
 // unread and on screen in a focused terminal.
 func (m *Model) markRead() tea.Cmd {
 	id, ok := m.chat.Thread()
-	if !ok || m.blurred || m.help || m.width < minWidth || m.height < minHeight || !m.threads[id].Unread {
+	if !ok || !m.onScreen(id) || !m.threads[id].Unread {
 		return nil
 	}
 	msgs := m.threads[id].Messages
@@ -806,6 +820,31 @@ func (m *Model) upsert(t core.Thread) {
 	st.Thread = t
 	st.Messages = msgs
 	st.more = st.more || dropped
+}
+
+// notifyMaxAge is the oldest message that notifies. Older ones come in the
+// catch-up after connecting, which the unread markers already show.
+const notifyMaxAge = time.Minute
+
+// notify returns a desktop notification for msg, just added, if it's
+// someone else's, recent, and its thread isn't on screen.
+// shortcut: muted threads notify too; skip them once mute lands (Phase 3).
+func (m *Model) notify(msg core.Message) tea.Cmd {
+	st := m.threads[msg.Thread]
+	if msg.Sender == m.me.ID || !chat.Visible(msg) || m.now().Sub(msg.At) > notifyMaxAge || m.onScreen(msg.Thread) {
+		return nil
+	}
+	title := st.Title
+	if i := slices.IndexFunc(st.Members, func(u core.User) bool { return u.ID == msg.Sender }); i >= 0 && st.IsGroup {
+		title = cmp.Or(st.Members[i].Name, st.Members[i].Username) + " · " + st.Title
+	}
+	return m.act.Notify(title, cleanLine(chat.Body(cleanMessage(msg))))
+}
+
+// has reports whether thread holds a message with ID id.
+func (m *Model) has(thread core.ThreadID, id core.MessageID) bool {
+	st, ok := m.threads[thread]
+	return ok && slices.ContainsFunc(st.Messages, func(o core.Message) bool { return o.ID == id })
 }
 
 func (m *Model) addMessage(msg core.Message) {
