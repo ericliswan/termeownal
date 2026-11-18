@@ -567,7 +567,8 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [x] Edits and unsends shown; edit/unsend your own (`EditMessage`, `UnsendMessage`).
 - [ ] New DM with `SearchUsers` (`Ctrl+N`).
 - [ ] Message requests folder: view + accept.
-- [ ] Thread filter, group member list, mute indicator.
+- [x] Mute and unmute with `m`; muted threads dimmed and silent (#85).
+- [ ] Thread filter, group member list.
 - [ ] Content-type mapping table (§9) from Phase 0/1 logs.
 
 ### Phase 4 — Media · ~1 week
@@ -577,7 +578,7 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 - [ ] Send image from path (`/upload ~/pic.jpg` or `Ctrl+U` file prompt) via `SendMedia`.
 
 ### Phase 5 — Polish
-- [x] Desktop notifications when the thread isn't focused (#81; pulled forward during Phase 3). Muted threads still notify until mute lands.
+- [x] Desktop notifications when the thread isn't focused (#81; pulled forward during Phase 3). Muted threads don't notify (#85).
 - [ ] Themes + keybinding config.
 - [ ] Optional chat layout: your messages on the right, others' on the left (#61).
 - [ ] Settings panel: toggles for read receipts, typing, chat layout and notifications, saved to `config.toml` (#62).

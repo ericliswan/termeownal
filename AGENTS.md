@@ -49,7 +49,7 @@ Keep this section in sync with the `Makefile`.
 | Lint | `golangci-lint run` |
 | Format | `gofmt -w . && goimports -w .` |
 | Fuzz the cookie paste parser for 60 s (CI does on PRs touching `login.go`; a failing input lands in `testdata/fuzz/`, keep it as a regression case) | `make fuzz` |
-| Update UI golden files | `go test ./internal/ui/... -update` |
+| Update UI golden files | `go test ./internal/ui -update` |
 | Record the README demo GIF (needs `vhs`, fake backend) | `make demo` |
 | Check the release config | `goreleaser check` (CI runs it) |
 | Build every release target into `dist/` without publishing | `make snapshot` (needs `goreleaser`) |
@@ -127,9 +127,9 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
   - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
-  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `React` (a removal names the old emoji, as Instagram needs), `Edit`, `Unsend`, `Typing`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends).
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `React` (a removal names the old emoji, as Instagram needs), `Edit`, `Unsend`, `Mute`, `Typing`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends, mute).
   - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
-  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`) and `Typing` (another member's; the viewer's own, from another device, is dropped), then `MessageEdited`, `MessageUnsent`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`) and `Typing` (another member's; the viewer's own, from another device, is dropped), then `MessageEdited`, `MessageUnsent`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`, `ThreadMuted`. Only `Snapshot` reports a thread's `Muted`: a `ThreadUpdated` keeps the known value and `ThreadMuted` changes it.
   - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
@@ -172,6 +172,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 | Typing out | `SetTyping(ctx, shortID, bool)` (no-op when `DisableTyping` is set; fails before `Connect`) |
 | Search / new DM | `SearchUsers`, `GetUserForNewDM(ctx, fbid)`, `GetProfile`, `FetchThreadID(ctx, userFBID)` |
 | Reactions, edit, unsend | `SendReaction` (short ID), `EditMessage` (short ID, new OTID), `UnsendMessage` (**long** ID in `SendData.ThreadID`) |
+| Mute | `MuteThread` (short ID; `MuteSeconds` -1 forever, 0 unmutes; new OTID) |
 | Message requests | `AcceptMessageRequest` |
 | Media | `FetchMedia`; sending = `GetHTTP().SendMercuryUploadRequest` then `SendMedia` |
 | ID lookup | `FetchThreadID(ctx, threadKey)` → `ThreadIGIDs{LongID, ShortID}` (verified with 1:1 keys) |
@@ -303,14 +304,14 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 ### 7.6 TUI
 - Layout: thread list (left), chat view (right), composer (bottom right), status bar.
 - Components: `bubbles/list` (threads), `bubbles/viewport` + custom wrapping (chat), `bubbles/textarea` (composer — **remap** Enter to send, Alt+Enter newline; the default inserts a newline on Enter).
-- Keys: `Tab`/`Shift+Tab` focus · `j`/`k`/arrows move (in the messages pane, select a message) · `Enter` open/send · `g`/`G` top/bottom · `PgUp` at top loads older · `/` filter · `Ctrl+N` new DM · `r` reply (or retry failed) · `e` react · `E` edit / `d` unsend (after y/n) your message · `o` open media · `Esc` cancel · `?` help · `Ctrl+C` quit.
+- Keys: `Tab`/`Shift+Tab` focus · `j`/`k`/arrows move (in the messages pane, select a message) · `Enter` open/send · `g`/`G` top/bottom · `PgUp` at top loads older · `/` filter · `Ctrl+N` new DM · `r` reply (or retry failed) · `e` react · `E` edit / `d` unsend (after y/n) your message · `m` in the thread list mutes or unmutes the thread · `o` open media · `Esc` cancel · `?` help · `Ctrl+C` quit.
 - Emoji shortcodes in the composer, as in Discord: `:heart:` becomes ❤️ when the closing `:` is typed; after `:` and two letters, up to 5 matches show above the text (`↑`/`↓` move, `Tab`/`Enter` pick, `Esc` closes). The colon must start a word (`10:30` isn't one). Names come from `internal/ui/emoji/table.go`, generated from GitHub's gemoji (MIT) with `go generate ./internal/ui/emoji`.
 - `e` on a sent message opens the reaction picker: six quick reactions, or up to six matches as the user types part of a shortcode name; `←`/`→` move, `Enter` reacts, `Esc` closes. Picking the user's current reaction removes it. The UI shows the change at once and restores the old reaction if `React` fails; the cache gets it from the echo. Reactions show under the message, grouped by emoji with counts, the user's own highlighted.
 - `E` on the user's own sent message loads its text into the composer ("✎ Editing · esc cancels"; it replaces any draft and ends a reply); Enter sends the edit. `d` asks "Unsend this message for everyone? y/n" in the status bar; any key but `y` cancels. Both show at once and are undone if the call fails; the cache gets them from the echo. Edited messages end in "(edited)"; unsent ones show a dimmed "message unsent" and can't be replied or reacted to.
 - Mark read only when the thread is visible and the terminal is focused (`tea.WithReportFocus`); no focus reporting → assume focused.
-- Unread: bold + `●`. Muted: dimmed. Day separators; group consecutive messages by sender.
+- Unread: bold + `●`. Muted: dimmed, with "muted ·" before the time (dimming alone vanishes under `NO_COLOR`); `m` shows the change at once and undoes it if `Mute` fails. Day separators; group consecutive messages by sender.
 - "<name> is typing…" (or "A, B are typing…") at the bottom of the chat view; each start shows it for 6 s, and a stop or the member's message clears it. While the user types, the open thread is told at most every 4 s, and told they stopped on send, on clearing the text, on opening another thread or 5 s after the last edit.
-- Desktop notification (pulled forward from Phase 5) for another member's new message whose thread isn't on screen in a focused terminal (the inverse of mark read), unless it's over a minute old (the catch-up after connecting) or already shown (a replay). Title: the sender, or "Sender · Group"; body: the text, left out with `notify_preview = false`; `notify = false` turns them off. `app` sends OSC 9 (iTerm2, WezTerm, Ghostty) or OSC 99 (kitty) through `tea.Raw`, except inside tmux; otherwise it runs `osascript` (macOS) or `notify-send` (Linux), passing the text as arguments. Text is one line with no control characters. Muted threads will be skipped once mute lands.
+- Desktop notification (pulled forward from Phase 5) for another member's new message whose thread isn't on screen in a focused terminal (the inverse of mark read), unless it's over a minute old (the catch-up after connecting) or already shown (a replay). Title: the sender, or "Sender · Group"; body: the text, left out with `notify_preview = false`; `notify = false` turns them off. `app` sends OSC 9 (iTerm2, WezTerm, Ghostty) or OSC 99 (kitty) through `tea.Raw`, except inside tmux; otherwise it runs `osascript` (macOS) or `notify-send` (Linux), passing the text as arguments. Text is one line with no control characters. Muted threads never notify.
 - "Seen" (1:1), "Seen by" + names or "Seen by everyone" (group) under the user's message only when it's the newest in the thread; a reply already shows the other side read on. The UI keeps the highest watermark per member, like the store.
 - Respect `NO_COLOR`; handle resize; "terminal too small" below 60×15; width-aware wrapping for emoji/CJK.
 - Status bar reflects `StatusChanged`; `AuthFailed` shows a persistent banner.

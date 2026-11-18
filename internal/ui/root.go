@@ -78,6 +78,9 @@ type Actions interface {
 	// ErrorMsg if that fails, otherwise nil. It comes back as a
 	// core.MessageUnsent.
 	Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd
+	// Mute mutes or unmutes thread, on the service and in the cache;
+	// returns an ErrorMsg if that fails, otherwise nil.
+	Mute(thread core.ThreadID, muted bool) tea.Cmd
 	// Notify shows a desktop notification; returns nil. app may leave body
 	// out (notify_preview).
 	Notify(title, body string) tea.Cmd
@@ -135,6 +138,14 @@ type reactFailedMsg struct {
 	thread core.ThreadID
 	msg    core.MessageID
 	prev   core.Reaction
+	err    error
+}
+
+// muteFailedMsg puts back prev, thread's muted state before the user
+// changed it, after the call failed with err.
+type muteFailedMsg struct {
+	thread core.ThreadID
+	prev   bool
 	err    error
 }
 
@@ -350,6 +361,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setReaction(msg.thread, msg.msg, m.me.ID, msg.prev)
 		m.refresh()
 		return m.fail(msg.err), nil
+	case muteFailedMsg:
+		m.setMuted(msg.thread, msg.prev)
+		return m.fail(msg.err), nil
 
 	case core.StatusChanged:
 		m.status = msg.Status
@@ -359,8 +373,14 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case core.AuthFailed:
 		m.authErr = msg.Err
 	case core.ThreadUpdated:
-		m.upsert(msg.Thread)
+		t := msg.Thread
+		if st, ok := m.threads[t.ID]; ok {
+			t.Muted = st.Muted // only a snapshot or ThreadMuted changes it
+		}
+		m.upsert(t)
 		m.refresh()
+	case core.ThreadMuted:
+		m.setMuted(msg.Thread, msg.Muted)
 	case core.ThreadRead:
 		if st, ok := m.threads[msg.Thread]; ok {
 			st.Unread = false
@@ -494,6 +514,12 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 					stop = m.stopTyping()
 				}
 				return m, tea.Batch(stop, m.open(id), m.setFocus(paneComposer))
+			}
+			return m, nil
+		}
+		if s == "m" {
+			if id, ok := m.list.Selected(); ok {
+				return m, m.mute(id)
 			}
 			return m, nil
 		}
@@ -685,6 +711,32 @@ func (m *Model) react(msg core.Message, picked string) tea.Cmd {
 	}
 }
 
+// mute toggles whether thread is muted, showing the change before the
+// service confirms it.
+func (m *Model) mute(thread core.ThreadID) tea.Cmd {
+	st, ok := m.threads[thread]
+	if !ok {
+		return nil
+	}
+	prev := st.Muted
+	m.setMuted(thread, !prev)
+	cmd := m.act.Mute(thread, !prev)
+	return func() tea.Msg {
+		if e, ok := cmd().(ErrorMsg); ok {
+			return muteFailedMsg{thread: thread, prev: prev, err: e.Err}
+		}
+		return nil
+	}
+}
+
+// setMuted sets whether a known thread is muted.
+func (m *Model) setMuted(thread core.ThreadID, muted bool) {
+	if st, ok := m.threads[thread]; ok {
+		st.Muted = muted
+		m.refresh()
+	}
+}
+
 // ownReaction is user's reaction to msg, with no Emoji if there is none.
 func ownReaction(msg core.Message, user core.UserID) core.Reaction {
 	if i := slices.IndexFunc(msg.Reactions, func(r core.Reaction) bool { return r.User == user }); i >= 0 {
@@ -827,11 +879,10 @@ func (m *Model) upsert(t core.Thread) {
 const notifyMaxAge = time.Minute
 
 // notify returns a desktop notification for msg, just added, if it's
-// someone else's, recent, and its thread isn't on screen.
-// shortcut: muted threads notify too; skip them once mute lands (Phase 3).
+// someone else's, recent, and its thread is neither muted nor on screen.
 func (m *Model) notify(msg core.Message) tea.Cmd {
 	st := m.threads[msg.Thread]
-	if msg.Sender == m.me.ID || !chat.Visible(msg) || m.now().Sub(msg.At) > notifyMaxAge || m.onScreen(msg.Thread) {
+	if st.Muted || msg.Sender == m.me.ID || !chat.Visible(msg) || m.now().Sub(msg.At) > notifyMaxAge || m.onScreen(msg.Thread) {
 		return nil
 	}
 	title := st.Title

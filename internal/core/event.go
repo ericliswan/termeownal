@@ -103,6 +103,13 @@ type MessageUnsent struct {
 	Message MessageID
 }
 
+// ThreadMuted means the user muted or unmuted the thread, possibly on
+// another device.
+type ThreadMuted struct {
+	Thread ThreadID
+	Muted  bool
+}
+
 // ThreadUpdated carries a thread's current details. It comes before the
 // first event for a thread the backend hadn't reported yet.
 type ThreadUpdated struct{ Thread Thread }
@@ -128,6 +135,7 @@ func (ReactionAdded) event()   {}
 func (ReactionRemoved) event() {}
 func (MessageEdited) event()   {}
 func (MessageUnsent) event()   {}
+func (ThreadMuted) event()     {}
 func (ThreadUpdated) event()   {}
 func (SeqAdvanced) event()     {}
 func (SessionChanged) event()  {}

@@ -59,6 +59,10 @@ type Backend interface {
 	// arrives back as a MessageUnsent.
 	Unsend(ctx context.Context, thread ThreadID, msg MessageID) error
 
+	// Mute turns the thread's notifications off until turned on again, or
+	// with muted false turns them on. It may arrive back as a ThreadMuted.
+	Mute(ctx context.Context, thread ThreadID, muted bool) error
+
 	// Typing tells thread's members whether the user is typing. Without a
 	// stop, they stop seeing it a few seconds after the last start.
 	Typing(ctx context.Context, thread ThreadID, active bool) error

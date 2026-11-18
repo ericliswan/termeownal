@@ -198,6 +198,10 @@ func (f *fakeUpstream) UnsendMessage(_ context.Context, req *slidetypes.UnsendMe
 	return &slidetypes.UnsendMessageResponse{}, f.call("UnsendMessage", req)
 }
 
+func (f *fakeUpstream) MuteThread(_ context.Context, req *slidetypes.MuteThreadRequest) (*slidetypes.MuteThreadResponse, error) {
+	return &slidetypes.MuteThreadResponse{}, f.call("MuteThread", req)
+}
+
 func (f *fakeUpstream) SetTyping(_ context.Context, short string, typing bool) error {
 	return f.call(fmt.Sprint("SetTyping ", short, " ", typing), nil)
 }
@@ -445,6 +449,9 @@ func TestDeltas(t *testing.T) {
 		{name: "unsend", delta: `{"__typename":"SlideUQPPDeleteMessage","thread_fbid":"3400000000000002","message_id":"mid.$live4"}`,
 			want: []core.Event{core.MessageUnsent{Thread: 3400000000000002, Message: "mid.$live4"}}},
 		{name: "unsend in an unknown thread", delta: `{"__typename":"SlideUQPPDeleteMessage","thread_fbid":"3400000000000008","message_id":"mid.$x"}`},
+		{name: "mute", delta: `{"__typename":"SlideUQPPChangeMuteSettings","thread_fbid":"3400000000000002","is_muted_now":true}`,
+			want: []core.Event{core.ThreadMuted{Thread: 3400000000000002, Muted: true}}},
+		{name: "mute in an unknown thread", delta: `{"__typename":"SlideUQPPChangeMuteSettings","thread_fbid":"3400000000000008","is_muted_now":true}`},
 		{name: "no thread", delta: `{"__typename":"SlideUQPPCreate1To1Thread","thread_fbid":""}`},
 		{name: "unknown type", delta: `{"__typename":"SlideUQPPSomethingNew","thread_fbid":"3400000000000001"}`},
 		{name: "a thread termeownal can't show", delta: newMessage("mid.$live5", "3400000000000007", "3400000000000007", dave.ID),
@@ -812,6 +819,17 @@ func TestSendAndMarkRead(t *testing.T) {
 		MessageID: "mid.$fake1a", SendData: slidetypes.SendData{ThreadID: "340282366841710300949128000000000000001"},
 	}) {
 		t.Fatalf("unsend = %+v", reqs[0])
+	}
+
+	for _, muted := range []bool{true, false} {
+		if err := b.Mute(t.Context(), thread, muted); err != nil {
+			t.Fatal(err)
+		}
+		_, reqs := f.takeCalls()
+		mute := reqs[0].(*slidetypes.MuteThreadRequest)
+		if want := map[bool]int{true: -1, false: 0}[muted]; mute.ThreadID != "3400000000000001" || mute.MuteSeconds != want || mute.OfflineThreadingID == "" {
+			t.Fatalf("mute %v = %+v", muted, mute)
+		}
 	}
 
 	f.fail["SendMessage"] = httpclient.ErrRateLimited

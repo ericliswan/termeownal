@@ -369,6 +369,28 @@ func TestEditAndUnsend(t *testing.T) {
 	}
 }
 
+func TestMute(t *testing.T) {
+	b := newBackend(t, Options{})
+	_, threads, _ := b.Snapshot(t.Context())
+	if !slices.ContainsFunc(threads, func(th core.Thread) bool { return th.Muted }) {
+		t.Error("no seeded thread is muted")
+	}
+	th := threads[0]
+	if err := b.Mute(t.Context(), th.ID, !th.Muted); err != nil {
+		t.Fatal(err)
+	}
+	if ev := next(t, b); ev != (core.ThreadMuted{Thread: th.ID, Muted: !th.Muted}) {
+		t.Fatalf("echo = %+v", ev)
+	}
+	_, threads, _ = b.Snapshot(t.Context())
+	if i := slices.IndexFunc(threads, func(x core.Thread) bool { return x.ID == th.ID }); threads[i].Muted == th.Muted {
+		t.Error("Snapshot doesn't show the change")
+	}
+	if err := b.Mute(t.Context(), 1, true); err == nil {
+		t.Error("muted an unknown thread")
+	}
+}
+
 func TestReadAfter(t *testing.T) {
 	b := newBackend(t, Options{ReadAfter: time.Millisecond})
 	_, threads, _ := b.Snapshot(t.Context())

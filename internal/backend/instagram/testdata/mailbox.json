@@ -48,6 +48,7 @@
               "thread_subtype": "IGD_GROUP",
               "thread_id": "340282366841710300949128000000000000002",
               "is_group": true,
+              "is_muted": true,
               "thread_title": "",
               "users": [
                 {"interop_messaging_user_fbid": "10000000000000001", "username": "alice.example", "full_name": "Alice Example", "id": "9001"},

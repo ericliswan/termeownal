@@ -153,6 +153,33 @@ func TestMarkReadClearsCachedUnread(t *testing.T) {
 	}
 }
 
+func TestMuteUpdatesTheCache(t *testing.T) {
+	b := restoredFake(t)
+	st := openStore(t)
+	ctx := context.Background()
+	_, threads, err := b.Snapshot(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PutThreads(ctx, threads); err != nil {
+		t.Fatal(err)
+	}
+	th := threads[0]
+	if msg := (actions{ctx: ctx, b: b, st: st}).Mute(th.ID, !th.Muted)(); msg != nil {
+		t.Fatalf("Mute = %+v, want nil", msg)
+	}
+	_, cached, err := st.Snapshot(ctx, snapshotMessages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if j := slices.IndexFunc(cached, func(t core.Thread) bool { return t.ID == th.ID }); j < 0 || cached[j].Muted == th.Muted {
+		t.Fatalf("cached thread %d not changed", th.ID)
+	}
+	if _, ok := (actions{ctx: ctx, b: b, st: st}).Mute(1, true)().(ui.ErrorMsg); !ok {
+		t.Fatal("muting an unknown thread didn't fail")
+	}
+}
+
 func TestTypingFollowsTheSetting(t *testing.T) {
 	b := restoredFake(t)
 	if cmd := (actions{ctx: t.Context(), b: b}).Typing(1, true); cmd != nil {

@@ -53,6 +53,7 @@ The same ID goes by different names in different places. Trust this table, not G
 | `SendReaction` (`Input.ThreadID`, `Input.MessageID`) | short; a removal sends the old emoji with status `deleted` | the message's reactions | yes, 1:1 and group; our own reaction echoes as a `CreateReaction` delta; removals from the phone arrive live and resolve by `log_message_id` |
 | `EditMessage` (`ThreadID`, `TargetMessageID`) | short, with a new OTID | — | yes, from meow (v0.4.0) |
 | `UnsendMessage` (`SendData.ThreadID`) | **long** | — | yes, from meow (v0.4.0) |
+| `MuteThread` (`thread_fbid`) | short, with a new OTID; `mute_seconds` -1 mutes until unmuted, 0 unmutes | `ig_direct_mute_thread`, `mute_until` (ignored, as upstream does) | not yet (§9) |
 
 **We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead`, `UnsendMessage` and to recognise incoming typing.
 
@@ -72,6 +73,7 @@ Every delta has `__typename`, `uq_seq_id` and `thread_fbid` (the short ID). In a
 | `SlideUQPPMarkRead` | short | `read_timestamp_ms` (the viewer read the thread on another device) |
 | `SlideUQPPReadReceipt` | short | `participant_fbid` = FBID; `watermark_timestamp_ms`. The viewer's own receipt means they read the thread on another device, like `MarkRead`; termeownal treats it so, as upstream does |
 | `SlideUQPPThreadName` | short | `UpdateThreadNameEvent` |
+| `SlideUQPPChangeMuteSettings` | short | `is_muted_now` (from upstream's types; not seen yet) |
 | `SlideUQPPCreate1To1Thread`, `SlideUQPPUserReachabilityStatus`, `SlideUQPPNotYetImplementedMutation` | **empty** | `IgnoredEvent`, no IDs |
 | `TypingNotification` (not a delta) | **long** | `sender_id` = **IGID**; `activity_status` 1 = typing, 0 = stopped |
 | `Connected` (not a delta) | — | `subscribed_seq`, `latest_seq` |
@@ -122,6 +124,7 @@ All three paths in AGENTS §6.5 worked:
 - Edits, unsends and read receipts in a 1:1.
 - Replies: `replied_to_message_id` and the embedded `replied_to_message` are read from upstream's types, not seen in a recorded payload. Is the ID the `mid.$…` form, and is the copy missing once the original is unsent? Sending sets only `ReplyToMessageID`, as upstream does.
 - `FetchThreadID` with a group key.
+- Mute: whether `MuteThread` echoes a `ChangeMuteSettings` delta to the device that sent it (meow updates its cache when the call succeeds, so either works), and whether the mailbox and `GetThread` both fill `is_muted` (upstream reads it from both; meow takes it only from the mailbox and keeps the cached value on a `GetThread`).
 - Instagram's message length limit (ROADMAP §18).
 
 ## 10. What this means for `ids.go`

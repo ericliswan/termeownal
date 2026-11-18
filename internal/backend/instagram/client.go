@@ -65,6 +65,7 @@ type upstream interface {
 	SendReaction(context.Context, *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error)
 	EditMessage(context.Context, *slidetypes.EditMessageRequest) (*slidetypes.EditMessageResponse, error)
 	UnsendMessage(context.Context, *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error)
+	MuteThread(context.Context, *slidetypes.MuteThreadRequest) (*slidetypes.MuteThreadResponse, error)
 	Connect(context.Context)
 	ForceReconnect()
 	Disconnect()
@@ -427,6 +428,31 @@ func (b *Backend) Unsend(ctx context.Context, thread core.ThreadID, msg core.Mes
 		SendData:  slidetypes.SendData{ThreadID: ids.long},
 	}); err != nil {
 		return fmt.Errorf("unsend: %w", coreError(err))
+	}
+	return nil
+}
+
+// Mute mutes the thread until it's unmuted, or with muted false unmutes it.
+// Other devices get a ChangeMuteSettings delta.
+func (b *Backend) Mute(ctx context.Context, thread core.ThreadID, muted bool) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	ids, err := b.idsFor(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	seconds := 0 // unmute
+	if muted {
+		seconds = -1 // forever
+	}
+	if _, err := client.MuteThread(ctx, &slidetypes.MuteThreadRequest{
+		ThreadID:           ids.short,
+		MuteSeconds:        seconds,
+		OfflineThreadingID: b.NewOTID(),
+	}); err != nil {
+		return fmt.Errorf("mute: %w", coreError(err))
 	}
 	return nil
 }
