@@ -174,6 +174,10 @@ func (p *pump) apply(ctx context.Context, ev core.Event) core.Event {
 			p.log.Debug().Msg("removal of an unknown reaction dropped")
 			ev = nil
 		}
+	case core.MessageEdited:
+		err = p.st.EditMessage(ctx, e.Message, e.Text, e.At)
+	case core.MessageUnsent:
+		err = p.st.UnsendMessage(ctx, e.Message)
 	case core.SeqAdvanced:
 		if !p.failed {
 			p.session.SeqID, p.session.SeqAt = e.SeqID, e.At

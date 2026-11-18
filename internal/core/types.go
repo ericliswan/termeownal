@@ -84,6 +84,11 @@ type Message struct {
 	ReplyTo Quote
 	// Reactions holds at most one reaction per member.
 	Reactions []Reaction
+	// EditedAt is when Text was last edited; zero if never.
+	EditedAt time.Time
+	// Unsent means the sender took the message back. Text, ContentType and
+	// Reactions are then empty.
+	Unsent bool
 }
 
 // Reaction is a member's reaction to a message.
