@@ -297,6 +297,8 @@ func Render(thread core.Thread, me core.User, msgs []core.Message, selected core
 		body := Body(*m)
 		if m.Text == "" {
 			body = theme.Dim.Render(body)
+		} else if !m.EditedAt.IsZero() {
+			body += " " + theme.Dim.Render("(edited)")
 		}
 		for _, l := range strings.Split(lipgloss.Wrap(body, width-2, ""), "\n") {
 			lines = append(lines, indent+l)
@@ -436,6 +438,9 @@ func Visible(m core.Message) bool { return m.ContentType != reactionLog }
 // Body is the text shown for a message: its text, or its content type for
 // messages without text.
 func Body(m core.Message) string {
+	if m.Unsent {
+		return "message unsent"
+	}
 	if m.Text != "" {
 		return m.Text
 	}

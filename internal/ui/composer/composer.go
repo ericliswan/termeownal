@@ -38,12 +38,13 @@ type SubmitMsg struct{ Text string }
 const maxSuggestions = 5
 
 // Model wraps a textarea where Enter sends and Alt+Enter starts a new line.
-// A reply shows what it replies to above the text. Typing a shortcode such
+// A note above the text says what the text is for, such as the message it
+// replies to. Typing a shortcode such
 // as :hea suggests emoji above the text; :heart: becomes the emoji.
 type Model struct {
 	ta    textarea.Model
 	width int
-	reply string
+	note  string
 	// sugg are the emoji matching query, the shortcode being typed without
 	// its colon; pick is the highlighted one.
 	sugg  []emoji.Emoji
@@ -82,9 +83,12 @@ func New() Model {
 // SetWidth sets the inner width.
 func (m *Model) SetWidth(w int) { m.width = w; m.ta.SetWidth(w) }
 
-// SetReply shows quote, one line, as the message replied to; "" shows none.
-// It changes Height.
-func (m *Model) SetReply(quote string) { m.reply = quote }
+// SetNote shows line above the text, followed by "esc cancels"; "" shows
+// none. It changes Height.
+func (m *Model) SetNote(line string) { m.note = line }
+
+// SetValue replaces the text.
+func (m *Model) SetValue(s string) { m.ta.SetValue(s) }
 
 // Value is the text being written.
 func (m Model) Value() string { return m.ta.Value() }
@@ -92,7 +96,7 @@ func (m Model) Value() string { return m.ta.Value() }
 // Height is the inner height.
 func (m Model) Height() int {
 	h := m.ta.Height() + len(m.sugg)
-	if m.reply != "" {
+	if m.note != "" {
 		h++
 	}
 	return h
@@ -213,7 +217,7 @@ func (m *Model) replace(n int, s string) {
 	m.ta.InsertString(s)
 }
 
-// View renders the emoji suggestions and the reply line, if any, and the
+// View renders the emoji suggestions and the note, if any, and the
 // text box.
 func (m Model) View() string {
 	var b strings.Builder
@@ -224,8 +228,8 @@ func (m Model) View() string {
 		}
 		b.WriteString(ansi.Truncate(mark+e.Char+"  "+theme.Dim.Render(":"+e.Name+":"), m.width, "…") + "\n")
 	}
-	if m.reply != "" {
-		line := ansi.Truncate("↪ Replying to "+m.reply, max(m.width-lipgloss.Width(" · esc cancels"), 0), "…")
+	if m.note != "" {
+		line := ansi.Truncate(m.note, max(m.width-lipgloss.Width(" · esc cancels"), 0), "…")
 		b.WriteString(theme.Dim.Render(line+" · esc cancels") + "\n")
 	}
 	return b.String() + m.ta.View()

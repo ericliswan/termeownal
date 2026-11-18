@@ -146,11 +146,28 @@ func (a actions) Typing(thread core.ThreadID, active bool) tea.Cmd {
 // React sets or clears the user's reaction. The cache gets it from the
 // echo, like a reaction from another device.
 func (a actions) React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd {
+	return a.call("react", func(ctx context.Context) error { return a.b.React(ctx, thread, msg, emoji, remove) })
+}
+
+// Edit changes one of the user's messages; the cache gets it from the echo.
+func (a actions) Edit(thread core.ThreadID, msg core.MessageID, text string) tea.Cmd {
+	return a.call("edit", func(ctx context.Context) error { return a.b.Edit(ctx, thread, msg, text) })
+}
+
+// Unsend takes back one of the user's messages; the cache gets it from the
+// echo.
+func (a actions) Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd {
+	return a.call("unsend", func(ctx context.Context) error { return a.b.Unsend(ctx, thread, msg) })
+}
+
+// call runs f, bounded by sendTimeout, as a command that returns an ErrorMsg
+// naming what if f fails.
+func (a actions) call(what string, f func(context.Context) error) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(a.ctx, sendTimeout)
 		defer cancel()
-		if err := a.b.React(ctx, thread, msg, emoji, remove); err != nil {
-			return ui.ErrorMsg{Err: fmt.Errorf("react: %w", err)}
+		if err := f(ctx); err != nil {
+			return ui.ErrorMsg{Err: fmt.Errorf("%s: %w", what, err)}
 		}
 		return nil
 	}
