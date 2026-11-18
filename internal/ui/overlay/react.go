@@ -114,7 +114,7 @@ func (p Picker) View() string {
 			}
 		}
 		name := ":" + opts[p.sel].Name + ":"
-		if opts[p.sel].Char == p.current {
+		if p.current != "" && emoji.Same(opts[p.sel].Char, p.current) {
 			name += " (yours; Enter removes it)"
 		}
 		b.WriteString("\n" + theme.Dim.Render(name) + "\n\n")
