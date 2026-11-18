@@ -124,7 +124,7 @@ All three paths in AGENTS §6.5 worked:
 - Edits, unsends and read receipts in a 1:1.
 - Replies: `replied_to_message_id` and the embedded `replied_to_message` are read from upstream's types, not seen in a recorded payload. Is the ID the `mid.$…` form, and is the copy missing once the original is unsent? Sending sets only `ReplyToMessageID`, as upstream does.
 - `FetchThreadID` with a group key.
-- Mute: whether `MuteThread` echoes a `ChangeMuteSettings` delta to the device that sent it (meow updates its cache when the call succeeds, so either works), and whether `GetThread` fills `is_muted` and the mailbox `is_muted` (upstream reads both; meow takes it only from the mailbox and keeps the cached value on a `GetThread`).
+- Mute: whether `MuteThread` echoes a `ChangeMuteSettings` delta to the device that sent it (meow updates its cache when the call succeeds, so either works), and whether the mailbox and `GetThread` both fill `is_muted` (upstream reads it from both; meow takes it only from the mailbox and keeps the cached value on a `GetThread`).
 - Instagram's message length limit (ROADMAP §18).
 
 ## 10. What this means for `ids.go`
