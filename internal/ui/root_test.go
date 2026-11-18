@@ -49,10 +49,12 @@ type backendActions struct {
 	sendErr error
 	// reactErr, while set, fails React.
 	reactErr error
-	loads    int
-	sent     []core.Message
-	read     []core.Message
-	typing   []core.Typing
+	// changeErr, while set, fails Edit and Unsend.
+	changeErr error
+	loads     int
+	sent      []core.Message
+	read      []core.Message
+	typing    []core.Typing
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -98,6 +100,28 @@ func (a *backendActions) React(thread core.ThreadID, msg core.MessageID, emoji s
 		err := a.reactErr
 		if err == nil {
 			err = a.b.React(context.Background(), thread, msg, emoji, remove)
+		}
+		if err != nil {
+			return ErrorMsg{Err: err}
+		}
+		return nil
+	}
+}
+
+func (a *backendActions) Edit(thread core.ThreadID, msg core.MessageID, text string) tea.Cmd {
+	return a.call(func() error { return a.b.Edit(context.Background(), thread, msg, text) })
+}
+
+func (a *backendActions) Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd {
+	return a.call(func() error { return a.b.Unsend(context.Background(), thread, msg) })
+}
+
+// call runs f unless changeErr is set, returning an ErrorMsg on failure.
+func (a *backendActions) call(f func() error) tea.Cmd {
+	return func() tea.Msg {
+		err := a.changeErr
+		if err == nil {
+			err = f()
 		}
 		if err != nil {
 			return ErrorMsg{Err: err}
@@ -280,6 +304,16 @@ func TestScreens(t *testing.T) {
 	t.Run("react", func(t *testing.T) {
 		h := newHarness(t, 100, 30)
 		h.press("j", "enter", "shift+tab", "k", "e")
+		golden.RequireEqual(t, h.screen())
+	})
+	t.Run("edit", func(t *testing.T) {
+		h := newHarness(t, 100, 30)
+		h.sendOwn("first")
+		h.press("d", "y")
+		h.press("tab", "second", "enter")
+		h.do(h.nextEvent())
+		h.do(h.nextEvent())
+		h.press("shift+tab", "E", "!", "enter", "shift+tab", "E")
 		golden.RequireEqual(t, h.screen())
 	})
 	t.Run("help", func(t *testing.T) {
@@ -908,4 +942,133 @@ func TestRunsInProgram(t *testing.T) {
 		teatest.WithDuration(5*time.Second))
 	tm.Send(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	tm.WaitFinished(t, teatest.WithFinalTimeout(5*time.Second))
+}
+
+// sendOwn sends text in the first thread, applies its echo and selects it.
+func (h *harness) sendOwn(text string) core.Message {
+	h.t.Helper()
+	h.press("enter", text, "enter")
+	h.do(h.nextEvent())
+	h.press("shift+tab")
+	sel, ok := h.m.chat.Selected()
+	if !ok || sel.Text != text || sel.State != core.Sent {
+		h.t.Fatalf("selected = %+v, want the echo of %q", sel, text)
+	}
+	return sel
+}
+
+// loaded returns the loaded copy of msg.
+func (h *harness) loaded(msg core.Message) core.Message {
+	h.t.Helper()
+	for _, o := range h.m.threads[msg.Thread].Messages {
+		if o.ID == msg.ID {
+			return o
+		}
+	}
+	h.t.Fatalf("message %s not loaded", msg.ID)
+	return core.Message{}
+}
+
+func TestEditOwnMessage(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	target := h.sendOwn("helo")
+	h.press("E")
+	if h.m.focus != paneComposer || h.m.composer.Value() != "helo" || !strings.Contains(h.screen(), "✎ Editing") {
+		t.Fatalf("after E: focus %d, composer %q:\n%s", h.m.focus, h.m.composer.Value(), h.screen())
+	}
+	h.press("backspace", "backspace", "llo", "enter")
+	if got := h.loaded(target); got.Text != "hello" || got.EditedAt.IsZero() {
+		t.Fatalf("before the echo: %+v, want the new text, edited", got)
+	}
+	if h.m.editing.ID != "" || strings.Contains(h.screen(), "Editing") || !strings.Contains(h.screen(), "hello (edited)") {
+		t.Fatalf("edit mode not ended, or no (edited):\n%s", h.screen())
+	}
+	if len(h.openMessages("hello")) != 1 || len(h.act.sent) != 1 {
+		t.Fatalf("the edit was sent as a new message: %d sends", len(h.act.sent))
+	}
+	echo := h.nextEvent().(core.MessageEdited)
+	h.do(echo)
+	h.do(core.MessageEdited{Thread: echo.Thread, Message: echo.Message, Text: "older", At: echo.At.Add(-time.Minute)})
+	if got := h.loaded(target); got.Text != "hello" || !got.EditedAt.Equal(echo.At) {
+		t.Fatalf("after the echo and an older edit: %+v", got)
+	}
+}
+
+func TestEditErrorRestores(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	target := h.sendOwn("hello")
+	h.act.changeErr = errors.New("edit: boom")
+	h.press("E", "!", "enter")
+	if got := h.loaded(target); got.Text != "hello" || !got.EditedAt.IsZero() {
+		t.Fatalf("after a failed edit: %+v, want it unchanged", got)
+	}
+	if !strings.Contains(h.screen(), "boom") {
+		t.Fatalf("error not shown:\n%s", h.screen())
+	}
+}
+
+func TestEscCancelsEdit(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	target := h.sendOwn("hello")
+	h.press("E", "esc")
+	if h.m.editing.ID != "" || h.m.composer.Value() != "" || h.m.focus != paneComposer {
+		t.Fatalf("after esc: editing %q, composer %q, focus %d", h.m.editing.ID, h.m.composer.Value(), h.m.focus)
+	}
+	h.press("new", "enter")
+	if got := h.loaded(target); got.Text != "hello" || len(h.act.sent) != 2 {
+		t.Fatalf("after esc the next text wasn't a new message: %+v, %d sends", got, len(h.act.sent))
+	}
+}
+
+func TestUnsendAsksFirst(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	target := h.sendOwn("oops")
+	h.press("d")
+	if !strings.Contains(h.screen(), "Unsend this message for everyone? y/n") {
+		t.Fatalf("no confirmation:\n%s", h.screen())
+	}
+	h.press("n")
+	if h.loaded(target).Unsent || strings.Contains(h.screen(), "Unsend this") {
+		t.Fatalf("n unsent the message or kept asking:\n%s", h.screen())
+	}
+	h.press("d", "y")
+	if got := h.loaded(target); !got.Unsent || got.Text != "" || !strings.Contains(h.screen(), "message unsent") {
+		t.Fatalf("after y: %+v\n%s", got, h.screen())
+	}
+	h.do(h.nextEvent().(core.MessageUnsent))
+	h.press("E", "d", "e")
+	if h.m.editing.ID != "" || h.m.unsendTo.ID != "" || h.m.reactTo.ID != "" {
+		t.Fatalf("an unsent message can still be edited, unsent or reacted to")
+	}
+}
+
+func TestUnsendErrorRestores(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	target := h.sendOwn("keep")
+	h.act.changeErr = errors.New("unsend: boom")
+	h.press("d", "y")
+	if got := h.loaded(target); got.Unsent || got.Text != "keep" {
+		t.Fatalf("after a failed unsend: %+v", got)
+	}
+}
+
+func TestOthersMessagesCantBeEditedOrUnsent(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab")
+	sel, _ := h.m.chat.Selected()
+	if sel.Sender == h.m.me.ID {
+		t.Fatal("the fake's first thread should end with someone else's message")
+	}
+	h.press("E", "d")
+	if h.m.editing.ID != "" || h.m.unsendTo.ID != "" {
+		t.Fatalf("someone else's message: editing %q, unsending %q", h.m.editing.ID, h.m.unsendTo.ID)
+	}
+	h.do(core.MessageEdited{Thread: sel.Thread, Message: sel.ID, Text: "changed", At: sel.At.Add(time.Minute)})
+	if !strings.Contains(h.screen(), "changed (edited)") {
+		t.Fatalf("their edit not shown:\n%s", h.screen())
+	}
+	h.do(core.MessageUnsent{Thread: sel.Thread, Message: sel.ID})
+	if got := h.loaded(sel); !got.Unsent || !strings.Contains(h.screen(), "message unsent") {
+		t.Fatalf("their unsend not shown: %+v", got)
+	}
 }

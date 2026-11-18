@@ -70,6 +70,13 @@ type Actions interface {
 	// their current one; returns an ErrorMsg if that fails, otherwise nil.
 	// It comes back as a core.ReactionAdded or core.ReactionRemoved.
 	React(thread core.ThreadID, msg core.MessageID, emoji string, remove bool) tea.Cmd
+	// Edit replaces the text of msg, one of the user's; returns an ErrorMsg
+	// if that fails, otherwise nil. It comes back as a core.MessageEdited.
+	Edit(thread core.ThreadID, msg core.MessageID, text string) tea.Cmd
+	// Unsend takes back msg, one of the user's, for everyone; returns an
+	// ErrorMsg if that fails, otherwise nil. It comes back as a
+	// core.MessageUnsent.
+	Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd
 }
 
 // SnapshotMsg carries the account and threads, each with its newest
@@ -127,6 +134,13 @@ type reactFailedMsg struct {
 	err    error
 }
 
+// restoreMsg puts back prev, a message the user's edit or unsend changed,
+// after the call failed with err.
+type restoreMsg struct {
+	prev core.Message
+	err  error
+}
+
 // errNoEcho marks a message that was accepted but never echoed.
 var errNoEcho = errors.New("send: no confirmation from the server")
 
@@ -173,6 +187,9 @@ type Model struct {
 	// reply is the message the composer's next message replies to; its ID
 	// is empty for none.
 	reply core.Quote
+	// editing is the message the composer's text replaces; its ID is empty
+	// for none. It and reply are never both set.
+	editing core.Message
 
 	// outbox holds local messages to send, oldest first; the first is being
 	// sent. One at a time, so they arrive in order.
@@ -201,6 +218,9 @@ type Model struct {
 	// empty while the picker is closed.
 	reactTo core.Message
 	picker  overlay.Picker
+	// unsendTo is the message waiting for the user to confirm unsending it;
+	// its ID is empty for none.
+	unsendTo core.Message
 }
 
 // New returns the UI. now is the clock used to label times.
@@ -244,6 +264,19 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		id, ok := m.chat.Thread()
 		if !ok {
 			return m, nil
+		}
+		if target := m.editing; target.ID != "" {
+			m.setReply(core.Quote{})
+			if msg.Text == target.Text {
+				return m, nil
+			}
+			return m, m.change(target, func(o *core.Message) {
+				o.Text = msg.Text
+				// Not now: the server's clock may be behind, and its echo must apply.
+				if o.EditedAt.IsZero() {
+					o.EditedAt = o.At
+				}
+			}, m.act.Edit(target.Thread, target.ID, msg.Text))
 		}
 		otid := m.act.NewOTID()
 		local := core.Message{ID: core.MessageID("local:" + otid), Thread: id, Sender: m.me.ID, At: m.now(),
@@ -305,6 +338,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case ErrorMsg:
 		return m.fail(msg.Err), nil
+	case restoreMsg:
+		m.updateMessage(msg.prev.Thread, msg.prev.ID, func(o *core.Message) { *o = msg.prev })
+		m.refresh()
+		return m.fail(msg.err), nil
 	case reactFailedMsg:
 		m.setReaction(msg.thread, msg.msg, m.me.ID, msg.prev)
 		m.refresh()
@@ -337,6 +374,16 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		r := msg.Reaction
 		r.Emoji = cleanLine(r.Emoji)
 		m.setReaction(msg.Thread, msg.Message, r.User, r)
+		m.refresh()
+	case core.MessageEdited:
+		m.updateMessage(msg.Thread, msg.Message, func(o *core.Message) {
+			if !o.Unsent && !msg.At.Before(o.EditedAt) {
+				o.Text, o.EditedAt = clean(msg.Text), msg.At
+			}
+		})
+		m.refresh()
+	case core.MessageUnsent:
+		m.updateMessage(msg.Thread, msg.Message, unsend)
 		m.refresh()
 	case core.ReactionRemoved:
 		m.setReaction(msg.Thread, msg.Message, msg.User, core.Reaction{})
@@ -397,6 +444,13 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.react(target, picked)
 	}
+	if target := m.unsendTo; target.ID != "" {
+		m.unsendTo = core.Message{}
+		if s == "y" {
+			return m, m.change(target, unsend, m.act.Unsend(target.Thread, target.ID))
+		}
+		return m, nil
+	}
 	_, open := m.chat.Thread()
 	switch {
 	case m.focus == paneComposer && m.composer.Suggesting() && (s == "tab" || s == "esc"):
@@ -411,7 +465,7 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			step = len(order) - 1
 		}
 		return m, m.setFocus(order[(slices.Index(order, m.focus)+step)%len(order)])
-	case s == "esc" && m.reply.ID != "":
+	case s == "esc" && (m.reply.ID != "" || m.editing.ID != ""):
 		m.setReply(core.Quote{})
 		return m, nil
 	case s == "esc":
@@ -444,9 +498,19 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case ok && s == "r":
 			return m, m.replyOrRetry(id)
 		case ok && s == "e":
-			if sel, ok := m.chat.Selected(); ok && sel.State == core.Sent {
+			if sel, ok := m.chat.Selected(); ok && sel.State == core.Sent && !sel.Unsent {
 				m.reactTo = sel
 				m.picker = overlay.NewPicker(ownReaction(sel, m.me.ID).Emoji)
+			}
+			return m, nil
+		case ok && s == "E":
+			if sel, ok := m.chat.Selected(); ok && m.own(sel) && sel.Text != "" {
+				return m, m.edit(sel)
+			}
+			return m, nil
+		case ok && s == "d":
+			if sel, ok := m.chat.Selected(); ok && m.own(sel) {
+				m.unsendTo = sel
 			}
 			return m, nil
 		}
@@ -579,7 +643,7 @@ func (m *Model) replyOrRetry(id core.ThreadID) tea.Cmd {
 		return nil
 	case sel.State == core.SendFailed:
 		return m.retry(id)
-	case sel.State == core.Sent:
+	case sel.State == core.Sent && !sel.Unsent:
 		m.setReply(core.Quote{ID: sel.ID, Sender: sel.Sender, Text: sel.Text, ContentType: sel.ContentType})
 		return m.setFocus(paneComposer)
 	}
@@ -617,31 +681,74 @@ func ownReaction(msg core.Message, user core.UserID) core.Reaction {
 // setReaction replaces user's reaction to a loaded message with r, or
 // removes it if r has no Emoji.
 func (m *Model) setReaction(thread core.ThreadID, msg core.MessageID, user core.UserID, r core.Reaction) {
+	m.updateMessage(thread, msg, func(o *core.Message) {
+		rs := slices.DeleteFunc(slices.Clone(o.Reactions), func(o core.Reaction) bool { return o.User == user })
+		if r.Emoji != "" {
+			rs = append(rs, r)
+		}
+		o.Reactions = rs
+	})
+}
+
+// updateMessage applies f to a loaded message, if it is loaded.
+func (m *Model) updateMessage(thread core.ThreadID, msg core.MessageID, f func(*core.Message)) {
 	st, ok := m.threads[thread]
 	if !ok {
 		return
 	}
-	i := slices.IndexFunc(st.Messages, func(o core.Message) bool { return o.ID == msg })
-	if i < 0 {
-		return
+	if i := slices.IndexFunc(st.Messages, func(o core.Message) bool { return o.ID == msg }); i >= 0 {
+		f(&st.Messages[i])
 	}
-	rs := slices.DeleteFunc(slices.Clone(st.Messages[i].Reactions), func(o core.Reaction) bool { return o.User == user })
-	if r.Emoji != "" {
-		rs = append(rs, r)
-	}
-	st.Messages[i].Reactions = rs
 }
 
-// setReply sets the message the composer replies to, and resizes the
-// composer to show it.
+// own reports whether msg is one of the user's that they can edit or unsend.
+func (m Model) own(msg core.Message) bool {
+	return msg.Sender == m.me.ID && msg.State == core.Sent && !msg.Unsent
+}
+
+// unsend clears a message the way taking it back does.
+func unsend(o *core.Message) {
+	o.Text, o.ContentType, o.Reactions, o.Unsent = "", "", nil, true
+}
+
+// change applies f to msg, showing the change before the service confirms
+// it, and puts msg back if cmd, the call that makes it, fails.
+func (m *Model) change(msg core.Message, f func(*core.Message), cmd tea.Cmd) tea.Cmd {
+	m.updateMessage(msg.Thread, msg.ID, f)
+	m.refresh()
+	return func() tea.Msg {
+		if e, ok := cmd().(ErrorMsg); ok {
+			return restoreMsg{prev: msg, err: e.Err}
+		}
+		return nil
+	}
+}
+
+// edit loads msg's text into the composer to be changed.
+// shortcut: replaces any draft in the composer; keep it aside if users mind.
+func (m *Model) edit(msg core.Message) tea.Cmd {
+	m.setReply(core.Quote{})
+	m.editing = msg
+	m.composer.SetValue(msg.Text)
+	m.composer.SetNote("✎ Editing")
+	m.layout()
+	return m.setFocus(paneComposer)
+}
+
+// setReply sets the message the composer replies to, ending any edit, and
+// resizes the composer to show it.
 func (m *Model) setReply(q core.Quote) {
+	if m.editing.ID != "" {
+		m.editing = core.Message{}
+		m.composer.SetValue("")
+	}
 	m.reply = q
-	label := ""
+	note := ""
 	if id, ok := m.chat.Thread(); ok && q.ID != "" {
 		st := m.threads[id]
-		label = chat.QuoteText(st.Thread, m.me, st.Messages, q)
+		note = "↪ Replying to " + chat.QuoteText(st.Thread, m.me, st.Messages, q)
 	}
-	m.composer.SetReply(label)
+	m.composer.SetNote(note)
 	m.layout()
 }
 
@@ -880,7 +987,9 @@ func (m Model) statusBar() string {
 	if m.me.Username != "" {
 		left += theme.Dim.Render(" · @" + m.me.Username)
 	}
-	if m.errText != "" {
+	if m.unsendTo.ID != "" {
+		left += "  " + lipgloss.NewStyle().Foreground(theme.Warn).Render("Unsend this message for everyone? y/n")
+	} else if m.errText != "" {
 		left += "  " + lipgloss.NewStyle().Foreground(theme.Error).Render("! "+m.errText)
 	}
 	right := theme.Dim.Render("? help · ctrl+c quit")
