@@ -231,9 +231,56 @@ func (b *Backend) React(_ context.Context, thread core.ThreadID, msg core.Messag
 		echo = core.ReactionAdded{Thread: thread, Message: msg, Reaction: r}
 	}
 	t.history[i].Reactions = rs
+	return b.echoLocked(echo)
+}
+
+// Edit replaces the text of one of the user's messages and queues the echo
+// after EchoDelay.
+func (b *Backend) Edit(_ context.Context, thread core.ThreadID, msg core.MessageID, text string) error {
+	if text == "" {
+		return errors.New("fake: edit: empty text")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	m, err := b.ownMessageLocked(thread, msg)
+	if err != nil {
+		return fmt.Errorf("fake: edit: %w", err)
+	}
+	m.Text, m.EditedAt = text, b.opts.Now()
+	return b.echoLocked(core.MessageEdited{Thread: thread, Message: msg, Text: text, At: m.EditedAt})
+}
+
+// Unsend takes back one of the user's messages and queues the echo after
+// EchoDelay.
+func (b *Backend) Unsend(_ context.Context, thread core.ThreadID, msg core.MessageID) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	m, err := b.ownMessageLocked(thread, msg)
+	if err != nil {
+		return fmt.Errorf("fake: unsend: %w", err)
+	}
+	m.Text, m.ContentType, m.Reactions, m.Unsent = "", "", nil, true
+	return b.echoLocked(core.MessageUnsent{Thread: thread, Message: msg})
+}
+
+// ownMessageLocked finds one of the user's messages that isn't unsent.
+func (b *Backend) ownMessageLocked(thread core.ThreadID, msg core.MessageID) (*core.Message, error) {
+	t, err := b.threadLocked(thread)
+	if err != nil {
+		return nil, err
+	}
+	i := slices.IndexFunc(t.history, func(m core.Message) bool { return m.ID == msg })
+	if i < 0 || t.history[i].Sender != me.ID || t.history[i].Unsent {
+		return nil, fmt.Errorf("no message %q of the user's", msg)
+	}
+	return &t.history[i], nil
+}
+
+// echoLocked queues ev as a delta after EchoDelay.
+func (b *Backend) echoLocked(ev core.Event) error {
 	return b.goLocked(func() {
 		if b.sleep(b.opts.EchoDelay) {
-			_ = b.emitDelta(b.ctx, echo)
+			_ = b.emitDelta(b.ctx, ev)
 		}
 	})
 }

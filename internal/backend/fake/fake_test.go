@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -311,6 +312,60 @@ func TestReact(t *testing.T) {
 	}
 	if err := b.React(t.Context(), th.ID, "mid.nope", "❤️", false); err == nil {
 		t.Error("reaction to an unknown message accepted")
+	}
+}
+
+func TestEditAndUnsend(t *testing.T) {
+	b := newBackend(t, Options{})
+	_, threads, _ := b.Snapshot(t.Context())
+	th := threads[0]
+	i := slices.IndexFunc(th.Messages, func(m core.Message) bool { return m.Sender == me.ID })
+	j := slices.IndexFunc(th.Messages, func(m core.Message) bool { return m.Sender != me.ID })
+	if i < 0 || j < 0 {
+		t.Fatal("the first thread needs a message from each side")
+	}
+	own, theirs := th.Messages[i], th.Messages[j]
+	cached := func() core.Message {
+		t.Helper()
+		page, _, _ := b.History(t.Context(), th.ID, "", len(th.Messages))
+		return page[slices.IndexFunc(page, func(m core.Message) bool { return m.ID == own.ID })]
+	}
+
+	if err := b.Edit(t.Context(), th.ID, own.ID, "edited"); err != nil {
+		t.Fatal(err)
+	}
+	edited, ok := next(t, b).(core.MessageEdited)
+	if !ok || edited.Thread != th.ID || edited.Message != own.ID || edited.Text != "edited" || edited.At.IsZero() {
+		t.Fatalf("echo = %+v", edited)
+	}
+	next(t, b)
+	if m := cached(); m.Text != "edited" || !m.EditedAt.Equal(edited.At) {
+		t.Fatalf("after the edit: %+v", m)
+	}
+	if !reflect.DeepEqual(th.Messages[i], own) {
+		t.Error("Edit changed a message Snapshot returned")
+	}
+
+	if err := b.Unsend(t.Context(), th.ID, own.ID); err != nil {
+		t.Fatal(err)
+	}
+	if unsent, ok := next(t, b).(core.MessageUnsent); !ok || unsent != (core.MessageUnsent{Thread: th.ID, Message: own.ID}) {
+		t.Fatalf("echo = %+v", unsent)
+	}
+	next(t, b)
+	if m := cached(); !m.Unsent || m.Text != "" || m.Reactions != nil {
+		t.Fatalf("after the unsend: %+v", m)
+	}
+
+	for name, err := range map[string]error{
+		"edit someone else's":   b.Edit(t.Context(), th.ID, theirs.ID, "x"),
+		"unsend someone else's": b.Unsend(t.Context(), th.ID, theirs.ID),
+		"edit an unsent one":    b.Edit(t.Context(), th.ID, own.ID, "x"),
+		"edit to nothing":       b.Edit(t.Context(), th.ID, own.ID, ""),
+	} {
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }
 
