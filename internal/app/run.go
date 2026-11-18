@@ -40,7 +40,7 @@ import (
 func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger, cfg config.Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st, log: log, sendTyping: cfg.SendTyping, notifyPreview: cfg.NotifyPreview}, time.Now), tea.WithContext(ctx))
+	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st, log: log, sendTyping: cfg.SendTyping, notify: cfg.Notify, notifyPreview: cfg.NotifyPreview}, time.Now), tea.WithContext(ctx))
 
 	p := newPump(b, st, prog, log)
 	p.session, p.save = s, save
@@ -62,6 +62,8 @@ type actions struct {
 	st         *store.Store
 	log        zerolog.Logger
 	sendTyping bool
+	// notify is the notify setting.
+	notify bool
 	// notifyPreview is the notify_preview setting.
 	notifyPreview bool
 }

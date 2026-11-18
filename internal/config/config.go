@@ -41,6 +41,9 @@ type Config struct {
 	// SendTyping tells a thread's members while you type. Others' typing
 	// shows either way.
 	SendTyping bool `toml:"send_typing"`
+	// Notify shows desktop notifications for messages in threads you aren't
+	// looking at.
+	Notify bool `toml:"notify"`
 	// NotifyPreview puts the message text in desktop notifications; without
 	// it they name only the sender.
 	NotifyPreview bool `toml:"notify_preview"`
@@ -55,6 +58,7 @@ func Default() Config {
 		LogLevel:             zerolog.InfoLevel,
 		ForceRefreshInterval: 20 * time.Hour,
 		SendTyping:           true,
+		Notify:               true,
 		NotifyPreview:        true,
 	}
 }

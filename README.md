@@ -63,7 +63,7 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 - "Seen" under your newest message once the other side has read it
 - Typing indicators both ways; set `send_typing = false` to stop sending yours
 - Emoji by name, as in Discord: type `:heart:` for ❤️, or pick from the matches shown after `:he`
-- Desktop notifications for messages in threads you aren't looking at; set `notify_preview = false` to show only the sender
+- Desktop notifications for messages in threads you aren't looking at; set `notify = false` to turn them off, or `notify_preview = false` to show only the sender
 - Unread markers; opening a thread marks it read, here and on Instagram (only while the terminal is focused)
 - Instant startup from a local cache
 - Reconnecting on its own after the connection drops or the computer sleeps
@@ -165,6 +165,9 @@ force_refresh_interval = "20h"
 
 # Tell others when you're typing. Theirs shows either way.
 send_typing = true
+
+# Desktop notifications for messages in threads you aren't looking at.
+notify = true
 
 # Put the message text in desktop notifications; false shows only the sender.
 notify_preview = true

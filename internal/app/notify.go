@@ -36,9 +36,13 @@ const notifyTimeout = 5 * time.Second
 // maxNotify caps the length of a notification's title and body, in runes.
 const maxNotify = 200
 
-// Notify shows a desktop notification, leaving out body unless
-// notify_preview is on. Failures are only logged: a notification is a hint.
+// Notify shows a desktop notification if notify is on, leaving out body
+// unless notify_preview is on. Failures are only logged: a notification is a
+// hint.
 func (a actions) Notify(title, body string) tea.Cmd {
+	if !a.notify {
+		return nil
+	}
 	if !a.notifyPreview {
 		body = ""
 	}
