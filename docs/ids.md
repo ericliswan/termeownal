@@ -51,8 +51,8 @@ The same ID goes by different names in different places. Trust this table, not G
 | `GetUserForNewDM(ctx, fbid)` | FBID | user info | yes |
 | `SetTyping(ctx, id, bool)` | short (per upstream) | — | yes, shows and stops on the phone |
 | `SendReaction` (`Input.ThreadID`, `Input.MessageID`) | short; a removal sends the old emoji with status `deleted` | the message's reactions | yes, 1:1 and group; our own reaction echoes as a `CreateReaction` delta; removals from the phone arrive live and resolve by `log_message_id` |
-| `EditMessage` (`ThreadID`, `TargetMessageID`) | short, with a new OTID (per upstream) | — | no |
-| `UnsendMessage` (`SendData.ThreadID`) | **long** (per upstream) | — | no |
+| `EditMessage` (`ThreadID`, `TargetMessageID`) | short, with a new OTID | — | yes, from meow (v0.4.0) |
+| `UnsendMessage` (`SendData.ThreadID`) | **long** | — | yes, from meow (v0.4.0) |
 
 **We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead`, `UnsendMessage` and to recognise incoming typing.
 
@@ -119,7 +119,6 @@ All three paths in AGENTS §6.5 worked:
 
 - **End-to-end encrypted chats:** the test phone offered no way to start one. Upstream doesn't support them (AGENTS §15). If a thread with an unfamiliar subtype or `input_mode` shows up, label it instead of failing.
 - **Message requests:** `PaginateMailbox` for folder `PENDING` returned nothing because no request existed. Revisit in Phase 3 with an account the test account doesn't follow.
-- Edits and unsends (Phase 3).
 - Edits, unsends and read receipts in a 1:1.
 - Replies: `replied_to_message_id` and the embedded `replied_to_message` are read from upstream's types, not seen in a recorded payload. Is the ID the `mid.$…` form, and is the copy missing once the original is unsent? Sending sets only `ReplyToMessageID`, as upstream does.
 - `FetchThreadID` with a group key.
