@@ -26,6 +26,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/rs/zerolog"
 
+	"termeownal/internal/config"
 	"termeownal/internal/core"
 	"termeownal/internal/store"
 	"termeownal/internal/ui"
@@ -35,11 +36,11 @@ import (
 // the backend b, restored from session s, then closes b. save, if not nil,
 // saves the session as it changes: the seq ID once the events before it are
 // stored, and the login data on SessionChanged and at exit.
-// sendTyping is the send_typing setting.
-func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger, sendTyping bool) error {
+// cfg holds the settings the UI's actions follow.
+func Run(ctx context.Context, b core.Backend, st *store.Store, s core.Session, save func(core.Session) error, log zerolog.Logger, cfg config.Config) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st, log: log, sendTyping: sendTyping}, time.Now), tea.WithContext(ctx))
+	prog := tea.NewProgram(ui.New(actions{ctx: ctx, b: b, st: st, log: log, sendTyping: cfg.SendTyping, notifyPreview: cfg.NotifyPreview}, time.Now), tea.WithContext(ctx))
 
 	p := newPump(b, st, prog, log)
 	p.session, p.save = s, save
@@ -61,6 +62,8 @@ type actions struct {
 	st         *store.Store
 	log        zerolog.Logger
 	sendTyping bool
+	// notifyPreview is the notify_preview setting.
+	notifyPreview bool
 }
 
 func (a actions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {

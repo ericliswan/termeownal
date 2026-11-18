@@ -143,7 +143,7 @@ func run() error {
 			return err
 		}
 		defer func() { _ = st.Close() }()
-		return app.Run(ctx, b, st, core.Session{}, nil, log, cfg.SendTyping)
+		return app.Run(ctx, b, st, core.Session{}, nil, log, cfg)
 	case "instagram":
 		s, err := f.Load()
 		switch {
@@ -165,7 +165,7 @@ func run() error {
 			return err
 		}
 		defer func() { _ = st.Close() }()
-		return app.Run(ctx, b, st, s, f.Save, log, cfg.SendTyping)
+		return app.Run(ctx, b, st, s, f.Save, log, cfg)
 	default:
 		return fmt.Errorf("unknown backend %q", *backend)
 	}

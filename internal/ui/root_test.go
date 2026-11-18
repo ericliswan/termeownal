@@ -18,6 +18,7 @@ package ui
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -58,6 +59,7 @@ type backendActions struct {
 	sent      []core.Message
 	read      []core.Message
 	typing    []core.Typing
+	notified  []string // "title: body" per Notify call
 }
 
 func (a *backendActions) History(thread core.ThreadID, before core.MessageID, n int) tea.Cmd {
@@ -118,6 +120,13 @@ func (a *backendActions) Edit(thread core.ThreadID, msg core.MessageID, text str
 
 func (a *backendActions) Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd {
 	return a.call(func() error { return a.b.Unsend(context.Background(), thread, msg) })
+}
+
+func (a *backendActions) Notify(title, body string) tea.Cmd {
+	return func() tea.Msg {
+		a.notified = append(a.notified, title+": "+body)
+		return nil
+	}
 }
 
 // call runs f unless changeErr is set, returning an ErrorMsg on failure.
@@ -826,6 +835,44 @@ func TestUnreadOnlyWhenNotOpen(t *testing.T) {
 	}
 	if !h.m.threads[other].Unread {
 		t.Error("other thread not marked unread")
+	}
+}
+
+func TestNotifyOnlyWhenNotSeen(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	open, _ := h.m.chat.Thread()
+	var other, group core.ThreadID
+	for id, st := range h.m.threads {
+		switch {
+		case st.IsGroup:
+			group = id
+		case id != open:
+			other = id
+		}
+	}
+	from := h.m.threads[group].Members[0]
+	add := func(id core.MessageID, thread core.ThreadID, sender core.UserID, at time.Time) {
+		t.Helper()
+		h.do(core.MessageAdded{Message: core.Message{ID: id, Thread: thread, Sender: sender, At: at, Text: "hi\x1b[2J"}})
+	}
+	add("mid.open", open, 101, testNow)
+	add("mid.other", other, 101, testNow)
+	add("mid.other", other, 101, testNow) // a replay
+	add("mid.mine", other, h.m.me.ID, testNow)
+	add("mid.old", other, 101, testNow.Add(-2*time.Minute))
+	add("mid.group", group, from.ID, testNow)
+	h.do(tea.BlurMsg{})
+	add("mid.blurred", open, 101, testNow)
+
+	o, g := h.m.threads[open].Title, h.m.threads[group].Title
+	want := []string{
+		h.m.threads[other].Title + ": hi[2J",
+		cmp.Or(from.Name, from.Username) + " · " + g + ": hi[2J",
+		o + ": hi[2J",
+	}
+	if !slices.Equal(h.act.notified, want) {
+		t.Fatalf("notified %q, want %q", h.act.notified, want)
 	}
 }
 

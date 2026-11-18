@@ -41,6 +41,9 @@ type Config struct {
 	// SendTyping tells a thread's members while you type. Others' typing
 	// shows either way.
 	SendTyping bool `toml:"send_typing"`
+	// NotifyPreview puts the message text in desktop notifications; without
+	// it they name only the sender.
+	NotifyPreview bool `toml:"notify_preview"`
 }
 
 // minForceRefresh matches upstream's limit of one full reconnect per hour.
@@ -52,6 +55,7 @@ func Default() Config {
 		LogLevel:             zerolog.InfoLevel,
 		ForceRefreshInterval: 20 * time.Hour,
 		SendTyping:           true,
+		NotifyPreview:        true,
 	}
 }
 

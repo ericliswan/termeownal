@@ -310,6 +310,7 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 - Mark read only when the thread is visible and the terminal is focused (`tea.WithReportFocus`); no focus reporting → assume focused.
 - Unread: bold + `●`. Muted: dimmed. Day separators; group consecutive messages by sender.
 - "<name> is typing…" (or "A, B are typing…") at the bottom of the chat view; each start shows it for 6 s, and a stop or the member's message clears it. While the user types, the open thread is told at most every 4 s, and told they stopped on send, on clearing the text, on opening another thread or 5 s after the last edit.
+- Desktop notification (pulled forward from Phase 5) for another member's new message whose thread isn't on screen in a focused terminal (the inverse of mark read), unless it's over a minute old (the catch-up after connecting) or already shown (a replay). Title: the sender, or "Sender · Group"; body: the text, left out with `notify_preview = false`. `app` sends OSC 9 (iTerm2, WezTerm, Ghostty) or OSC 99 (kitty) through `tea.Raw`, except inside tmux; otherwise it runs `osascript` (macOS) or `notify-send` (Linux), passing the text as arguments. Text is one line with no control characters. Muted threads will be skipped once mute lands.
 - "Seen" (1:1), "Seen by" + names or "Seen by everyone" (group) under the user's message only when it's the newest in the thread; a reply already shows the other side read on. The UI keeps the highest watermark per member, like the store.
 - Respect `NO_COLOR`; handle resize; "terminal too small" below 60×15; width-aware wrapping for emoji/CJK.
 - Status bar reflects `StatusChanged`; `AuthFailed` shows a persistent banner.
@@ -317,7 +318,7 @@ Indexes: `messages(thread_key, ts_ms, id)`, `messages(otid)`, `threads(last_acti
 ### 7.7 Config and logs (`config`, `app`)
 - Paths come from `adrg/xdg`: `termeownal/config.toml` in the config dir, the data dir for the cache and `session.enc`, `termeownal/meow.log` in the state dir. On macOS all three are under `~/Library/Application Support/termeownal`. `XDG_*` variables override them.
 - The config file is optional; a missing file means defaults. Unknown keys and bad values are errors that name the file.
-- Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads), `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`) and `send_typing` (default `true`; `false` stops telling others you're typing, while theirs still shows). The once-an-hour full-reconnect floor is a constant, not a setting.
+- Keys: `log_level` (`debug`, `info`, `warn` or `error`; default `info`; `trace` is refused because it would log raw payloads), `force_refresh_interval` (default `"20h"`, `0` disables, otherwise at least `1h`) `send_typing` (default `true`; `false` stops telling others you're typing, while theirs still shows) and `notify_preview` (default `true`; `false` leaves the message text out of desktop notifications). The once-an-hour full-reconnect floor is a constant, not a setting.
 - `app.OpenLog` appends JSON lines to `meow.log` (file `0600`, directory `0700`). No rotation yet.
 - Add a key only when a feature needs it, and add it here.
 
@@ -400,7 +401,7 @@ Done when v0.1.0 installs with Homebrew and logs in with a password or cookies.
 
 **Phase 4 — Media.** Placeholders with metadata · `o` to download and open · inline images on kitty / iTerm2 / sixel with fallback · send images.
 
-**Phase 5 — Polish.** Notifications · themes + keybinding config · chat layout with your messages on the right · settings panel.
+**Phase 5 — Polish.** Notifications (done early, #81) · themes + keybinding config · chat layout with your messages on the right · settings panel.
 
 **Stretch.** Multiple accounts · encrypted cache · `backend/matrix`.
 
