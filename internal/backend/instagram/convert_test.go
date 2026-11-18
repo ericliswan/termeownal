@@ -26,6 +26,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"go.mau.fi/mautrix-meta/pkg/instameow/slidetypes"
+	"go.mau.fi/util/jsontime"
 
 	"termeownal/internal/core"
 )
@@ -143,5 +144,18 @@ func TestConvertReactions(t *testing.T) {
 	}}, 1, zerolog.Nop())
 	if want := []core.Reaction{{User: 7, Emoji: "😂", ID: "mid.$r1"}}; !slices.Equal(got.Reactions, want) {
 		t.Errorf("Reactions = %+v, want %+v", got.Reactions, want)
+	}
+}
+
+func TestConvertEditedMessage(t *testing.T) {
+	got, _ := convertMessage(&slidetypes.Message{ID: "mid.$x", SlideEditHistory: []slidetypes.MessageEditHistoryEntry{
+		{TimestampMS: jsontime.UnixMilliString{Time: time.UnixMilli(1767225900000)}},
+		{TimestampMS: jsontime.UnixMilliString{Time: time.UnixMilli(1767225800000)}},
+	}}, 1, zerolog.Nop())
+	if !got.EditedAt.Equal(time.UnixMilli(1767225900000)) {
+		t.Errorf("EditedAt = %v", got.EditedAt)
+	}
+	if got, _ := convertMessage(&slidetypes.Message{ID: "mid.$x"}, 1, zerolog.Nop()); !got.EditedAt.IsZero() {
+		t.Errorf("EditedAt = %v for a message never edited", got.EditedAt)
 	}
 }

@@ -130,6 +130,11 @@ func convertMessage(m *slidetypes.Message, key core.ThreadID, log zerolog.Logger
 		ContentType: m.ContentType,
 		OTID:        m.OfflineThreadingID,
 	}
+	for _, e := range m.SlideEditHistory {
+		if e.TimestampMS.After(out.EditedAt) {
+			out.EditedAt = e.TimestampMS.Time
+		}
+	}
 	if m.RepliedToMessageID != "" {
 		out.ReplyTo.ID = core.MessageID(m.RepliedToMessageID)
 		if q := m.RepliedToMessage; q != nil {

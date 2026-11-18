@@ -190,6 +190,14 @@ func (f *fakeUpstream) SendReaction(_ context.Context, req *slidetypes.CreateRea
 	return &slidetypes.SendReactionResponse{}, f.call("SendReaction", req)
 }
 
+func (f *fakeUpstream) EditMessage(_ context.Context, req *slidetypes.EditMessageRequest) (*slidetypes.EditMessageResponse, error) {
+	return &slidetypes.EditMessageResponse{}, f.call("EditMessage", req)
+}
+
+func (f *fakeUpstream) UnsendMessage(_ context.Context, req *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error) {
+	return &slidetypes.UnsendMessageResponse{}, f.call("UnsendMessage", req)
+}
+
 func (f *fakeUpstream) SetTyping(_ context.Context, short string, typing bool) error {
 	return f.call(fmt.Sprint("SetTyping ", short, " ", typing), nil)
 }
@@ -431,6 +439,12 @@ func TestDeltas(t *testing.T) {
 			want: []core.Event{core.ReactionRemoved{Thread: 3400000000000002, Message: "mid.$live4", User: bob.ID, ID: "mid.$r1"}}},
 		{name: "reaction removed, known only by its ID", delta: `{"__typename":"SlideUQPPDeleteReaction","thread_fbid":"3400000000000002","message_id":"mid.$delete","reaction":{"log_message_id":"mid.$r1"}}`,
 			want: []core.Event{core.ReactionRemoved{Thread: 3400000000000002, Message: "mid.$delete", ID: "mid.$r1"}}},
+		{name: "edit", delta: `{"__typename":"SlideUQPPEditMessage","thread_fbid":"3400000000000002","message_id":"mid.$live4","text_body":"placeholder edited","slide_edit_history_entry":{"timestamp_ms":"1767225900000"}}`,
+			want: []core.Event{core.MessageEdited{Thread: 3400000000000002, Message: "mid.$live4", Text: "placeholder edited", At: time.UnixMilli(1767225900000)}}},
+		{name: "edit in an unknown thread", delta: `{"__typename":"SlideUQPPEditMessage","thread_fbid":"3400000000000008","message_id":"mid.$x","text_body":"placeholder edited"}`},
+		{name: "unsend", delta: `{"__typename":"SlideUQPPDeleteMessage","thread_fbid":"3400000000000002","message_id":"mid.$live4"}`,
+			want: []core.Event{core.MessageUnsent{Thread: 3400000000000002, Message: "mid.$live4"}}},
+		{name: "unsend in an unknown thread", delta: `{"__typename":"SlideUQPPDeleteMessage","thread_fbid":"3400000000000008","message_id":"mid.$x"}`},
 		{name: "no thread", delta: `{"__typename":"SlideUQPPCreate1To1Thread","thread_fbid":""}`},
 		{name: "unknown type", delta: `{"__typename":"SlideUQPPSomethingNew","thread_fbid":"3400000000000001"}`},
 		{name: "a thread termeownal can't show", delta: newMessage("mid.$live5", "3400000000000007", "3400000000000007", dave.ID),
@@ -780,6 +794,23 @@ func TestSendAndMarkRead(t *testing.T) {
 		if _, reqs := f.takeCalls(); reqs[0].(*slidetypes.CreateReactionRequest).Input != want {
 			t.Fatalf("react = %+v, want %+v", reqs[0], want)
 		}
+	}
+
+	if err := b.Edit(t.Context(), thread, "mid.$fake1a", "placeholder edited"); err != nil {
+		t.Fatal(err)
+	}
+	_, reqs = f.takeCalls()
+	edit := reqs[0].(*slidetypes.EditMessageRequest)
+	if edit.ThreadID != "3400000000000001" || edit.TargetMessageID != "mid.$fake1a" || edit.Body.Value != "placeholder edited" || edit.OfflineThreadingID == "" {
+		t.Fatalf("edit = %+v", edit)
+	}
+	if err := b.Unsend(t.Context(), thread, "mid.$fake1a"); err != nil {
+		t.Fatal(err)
+	}
+	if _, reqs := f.takeCalls(); *reqs[0].(*slidetypes.UnsendMessageRequest) != (slidetypes.UnsendMessageRequest{
+		MessageID: "mid.$fake1a", SendData: slidetypes.SendData{ThreadID: "340282366841710300949128000000000000001"},
+	}) {
+		t.Fatalf("unsend = %+v", reqs[0])
 	}
 
 	f.fail["SendMessage"] = httpclient.ErrRateLimited

@@ -62,6 +62,8 @@ type upstream interface {
 	MarkReadValidation(context.Context, *slidetypes.MarkReadRequest) (*slidetypes.MarkReadValidationResponse, error)
 	SetTyping(context.Context, string, bool) error
 	SendReaction(context.Context, *slidetypes.CreateReactionRequest) (*slidetypes.SendReactionResponse, error)
+	EditMessage(context.Context, *slidetypes.EditMessageRequest) (*slidetypes.EditMessageResponse, error)
+	UnsendMessage(context.Context, *slidetypes.UnsendMessageRequest) (*slidetypes.UnsendMessageResponse, error)
 	Connect(context.Context)
 	ForceReconnect()
 	Disconnect()
@@ -381,6 +383,49 @@ func (b *Backend) React(ctx context.Context, thread core.ThreadID, msg core.Mess
 		ThreadID:       ids.short,
 	}}); err != nil {
 		return fmt.Errorf("react: %w", coreError(err))
+	}
+	return nil
+}
+
+// Edit replaces the text of one of the user's messages. The result arrives
+// as an EditMessage delta.
+func (b *Backend) Edit(ctx context.Context, thread core.ThreadID, msg core.MessageID, text string) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	ids, err := b.idsFor(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	if _, err := client.EditMessage(ctx, &slidetypes.EditMessageRequest{
+		ThreadID:           ids.short,
+		Body:               slidetypes.SensitiveString{Value: text},
+		OfflineThreadingID: b.NewOTID(),
+		TargetMessageID:    string(msg),
+	}); err != nil {
+		return fmt.Errorf("edit: %w", coreError(err))
+	}
+	return nil
+}
+
+// Unsend takes back one of the user's messages. Unlike Edit, it takes the
+// long thread ID, as upstream does. The result arrives as a DeleteMessage
+// delta.
+func (b *Backend) Unsend(ctx context.Context, thread core.ThreadID, msg core.MessageID) error {
+	client, err := b.current()
+	if err != nil {
+		return err
+	}
+	ids, err := b.idsFor(ctx, client, thread)
+	if err != nil {
+		return err
+	}
+	if _, err := client.UnsendMessage(ctx, &slidetypes.UnsendMessageRequest{
+		MessageID: string(msg),
+		SendData:  slidetypes.SendData{ThreadID: ids.long},
+	}); err != nil {
+		return fmt.Errorf("unsend: %w", coreError(err))
 	}
 	return nil
 }

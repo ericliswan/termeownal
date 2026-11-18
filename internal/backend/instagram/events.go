@@ -177,6 +177,14 @@ func (b *Backend) handleDelta(ctx context.Context, d *slidetypes.Delta) error {
 			r := data.Reaction
 			return b.send(ctx, core.ReactionRemoved{Thread: key, Message: core.MessageID(data.MessageID), User: core.UserID(r.SenderFBID), ID: r.LogMessageID})
 		}
+	case *slidetypes.EditMessageEvent:
+		if known {
+			return b.send(ctx, core.MessageEdited{Thread: key, Message: core.MessageID(data.MessageID), Text: data.TextBody, At: data.SlideEditHistoryEntry.TimestampMS.Time})
+		}
+	case *slidetypes.DeleteMessageEvent:
+		if known {
+			return b.send(ctx, core.MessageUnsent{Thread: key, Message: core.MessageID(data.MessageID)})
+		}
 	default:
 		b.log.Debug().Str("type", d.TypeName).Msg("delta ignored")
 	}

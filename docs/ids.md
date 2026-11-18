@@ -23,7 +23,7 @@ The same ID goes by different names in different places. Trust this table, not G
 | ID | Appears as |
 |---|---|
 | short | `ThreadInfo.ID` (`id`), `ThreadInfo.ThreadFBID`, `Delta.ThreadIGID` (JSON `thread_fbid`; the Go name is wrong), `Message.ThreadFBID`, `ThreadIGIDs.ShortID` (`thread_fbid`) |
-| long | `ThreadInfo.ThreadID` (`thread_id`), `ThreadIGIDs.LongID` (`thread_igid`), `MarkReadMetadata.IGThreadIGID` (`ig_thread_igid`), `TypingNotification.ThreadID` (parsed from the MQTT topic) |
+| long | `ThreadInfo.ThreadID` (`thread_id`), `ThreadIGIDs.LongID` (`thread_igid`), `MarkReadMetadata.IGThreadIGID` (`ig_thread_igid`), `TypingNotification.ThreadID` (parsed from the MQTT topic), `UnsendMessageRequest.SendData.ThreadID` |
 | either | `SendTextRequest.IGThreadIGID` (`ig_thread_igid`) accepts both (§3) |
 
 ## 2. User IDs
@@ -51,9 +51,10 @@ The same ID goes by different names in different places. Trust this table, not G
 | `GetUserForNewDM(ctx, fbid)` | FBID | user info | yes |
 | `SetTyping(ctx, id, bool)` | short (per upstream) | — | yes, shows and stops on the phone |
 | `SendReaction` (`Input.ThreadID`, `Input.MessageID`) | short; a removal sends the old emoji with status `deleted` | the message's reactions | yes, 1:1 and group; our own reaction echoes as a `CreateReaction` delta; removals from the phone arrive live and resolve by `log_message_id` |
-| `EditMessage`, `UnsendMessage` | — | — | no (Phase 3) |
+| `EditMessage` (`ThreadID`, `TargetMessageID`) | short, with a new OTID (per upstream) | — | no |
+| `UnsendMessage` (`SendData.ThreadID`) | **long** (per upstream) | — | no |
 
-**We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead` and to recognise incoming typing.
+**We send with the short ID.** Upstream does the same, and the delta and history paths already use the short ID. The long ID is needed only for `MarkRead`, `UnsendMessage` and to recognise incoming typing.
 
 `RecipientIGIDs` takes an FBID despite its name.
 

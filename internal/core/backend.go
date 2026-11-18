@@ -51,6 +51,14 @@ type Backend interface {
 	// back as a ReactionAdded or ReactionRemoved.
 	React(ctx context.Context, thread ThreadID, msg MessageID, emoji string, remove bool) error
 
+	// Edit replaces the text of msg, one of the user's own messages. It
+	// arrives back as a MessageEdited.
+	Edit(ctx context.Context, thread ThreadID, msg MessageID, text string) error
+
+	// Unsend takes back msg, one of the user's own messages, for everyone. It
+	// arrives back as a MessageUnsent.
+	Unsend(ctx context.Context, thread ThreadID, msg MessageID) error
+
 	// Typing tells thread's members whether the user is typing. Without a
 	// stop, they stop seeing it a few seconds after the last start.
 	Typing(ctx context.Context, thread ThreadID, active bool) error
