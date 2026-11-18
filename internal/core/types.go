@@ -49,6 +49,10 @@ type Thread struct {
 	Members      []User
 	LastActivity time.Time
 	Unread       bool
+	// Muted means the user turned off the thread's notifications. Only
+	// Snapshot reports it: a ThreadUpdated keeps the known value, and
+	// ThreadMuted changes it.
+	Muted bool
 	// Messages holds the newest messages, oldest first, when the backend
 	// returns them with the thread. It may be empty.
 	Messages []Message

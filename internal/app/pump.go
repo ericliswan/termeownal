@@ -160,7 +160,9 @@ func (p *pump) apply(ctx context.Context, ev core.Event) core.Event {
 	case core.MessageAdded:
 		err = p.st.AddMessage(ctx, e.Message)
 	case core.ThreadUpdated:
-		err = p.st.PutThreads(ctx, []core.Thread{e.Thread})
+		err = p.st.UpdateThread(ctx, e.Thread)
+	case core.ThreadMuted:
+		err = p.st.SetMuted(ctx, e.Thread, e.Muted)
 	case core.ThreadRead:
 		err = p.st.MarkRead(ctx, e.Thread, e.Until)
 	case core.ReadReceipt:

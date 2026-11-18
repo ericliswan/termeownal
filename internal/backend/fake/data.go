@@ -57,6 +57,7 @@ var threadSpecs = []struct {
 	members  []int         // indexes into people
 	messages int
 	unread   bool
+	muted    bool
 }{
 	{members: []int{0}, messages: 180, unread: true},
 	{id: 9001, title: "COMP2003 project", members: []int{1, 2, 5, 6}, messages: 1500, unread: true},
@@ -64,7 +65,7 @@ var threadSpecs = []struct {
 	{id: 9002, members: []int{1, 5, 6}, messages: 25},
 	{members: []int{4}, messages: 400, unread: true},
 	{members: []int{7}, messages: 9},
-	{id: 9003, title: "Film Society 🎬", members: []int{8, 9, 10, 11, 0}, messages: 120},
+	{id: 9003, title: "Film Society 🎬", members: []int{8, 9, 10, 11, 0}, messages: 120, muted: true},
 	{members: []int{9}, messages: 1},
 	{members: []int{10}, messages: 75},
 	{members: []int{11}, messages: 260},
@@ -127,7 +128,7 @@ func seedData(now time.Time) []*seedThread {
 
 		last = last.Add(-time.Duration(rng.IntN(90)+i*i*20) * time.Minute)
 		t.LastActivity = last
-		t.Unread = spec.unread
+		t.Unread, t.Muted = spec.unread, spec.muted
 		t.history = make([]core.Message, spec.messages)
 		at := last
 		for k := spec.messages - 1; k >= 0; k-- {

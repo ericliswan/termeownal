@@ -61,6 +61,7 @@ var fixtureThreads = []core.Thread{
 		IsGroup:      true,
 		Members:      []core.User{alice, bob},
 		LastActivity: time.UnixMilli(1767225300000),
+		Muted:        true,
 		Messages: []core.Message{
 			{ID: "mid.$fake2a", Thread: 3400000000000002, Sender: bob.ID, At: time.UnixMilli(1767225300000), ContentType: "MEDIA_SHARE"},
 		},

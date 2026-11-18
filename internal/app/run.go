@@ -165,6 +165,17 @@ func (a actions) Unsend(thread core.ThreadID, msg core.MessageID) tea.Cmd {
 	return a.call("unsend", func(ctx context.Context) error { return a.b.Unsend(ctx, thread, msg) })
 }
 
+// Mute mutes or unmutes a thread. The cache is updated once Instagram
+// accepts it, as an echo isn't certain.
+func (a actions) Mute(thread core.ThreadID, muted bool) tea.Cmd {
+	return a.call("mute", func(ctx context.Context) error {
+		if err := a.b.Mute(ctx, thread, muted); err != nil {
+			return err
+		}
+		return a.st.SetMuted(ctx, thread, muted)
+	})
+}
+
 // call runs f, bounded by sendTimeout, as a command that returns an ErrorMsg
 // naming what if f fails.
 func (a actions) call(what string, f func(context.Context) error) tea.Cmd {

@@ -127,9 +127,9 @@ ui (Bubble Tea) ◄── tea.Msg ── app (pump) ◄── core.Event ── 
 ### 5.1 Layers
 - **`core`** has no dependencies on other termeownal packages. It defines:
   - Types: `ThreadID` (= upstream `ThreadKey`, int64; short and long IDs never leave the adapter), `UserID` (= FBID), `MessageID`, `User`, `Thread`, `Message` (+ `SendState`), `Session` (= opaque `AuthData` + seq ID). `AuthData` redacts itself in `fmt` output.
-  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `React` (a removal names the old emoji, as Instagram needs), `Edit`, `Unsend`, `Typing`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends).
+  - `Backend` interface: `Restore`, `Snapshot`, `History`, `NewOTID`, `Send`, `MarkRead`, `React` (a removal names the old emoji, as Instagram needs), `Edit`, `Unsend`, `Mute`, `Typing`, `Connect` (blocks; upstream reconnects on its own), `Events() <-chan Event`, `ExportAuth`, `Close`. The seq ID isn't part of `ExportAuth`: the pump saves it from `SeqAdvanced`. `Send` takes the ID of the message replied to, or `""`. Add methods only when a phase needs them (Phase 3: `SearchUsers`, `StartDM`, reactions, edits, unsends, mute).
   - `Authenticator` interface for multi-step login: `Start`, then `Submit` each `LoginStep`'s fields until a step carries a `LoginResult`.
-  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`) and `Typing` (another member's; the viewer's own, from another device, is dropped), then `MessageEdited`, `MessageUnsent`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`.
+  - `Event` types (Phase 1): `StatusChanged`, `AuthFailed`, `ResyncNeeded`, `MessageAdded`, `ThreadRead`, `ThreadUpdated`, `SeqAdvanced`, `SessionChanged`. Phase 3 adds `ReadReceipt` (another member's; the viewer's own becomes `ThreadRead`) and `Typing` (another member's; the viewer's own, from another device, is dropped), then `MessageEdited`, `MessageUnsent`, `ReactionAdded`, `ReactionRemoved`, `ThreadRemoved`, `ThreadMuted`. Only `Snapshot` reports a thread's `Muted`: a `ThreadUpdated` keeps the known value and `ThreadMuted` changes it.
   - Sentinel errors for §6.6: `ErrSessionExpired`, `ErrRateLimited`, `ErrVerificationRequired`, `ErrConsentRequired`, `ErrAccountSuspended`.
 - **`backend/*`** implements `core.Backend`. The fake backend must support everything the real one does.
 - **`store`** is a disposable cache. Everything in it can be re-fetched.
@@ -172,6 +172,7 @@ Other client methods: `LoadState`, `DumpState`, `SetSeqID`, `HasSeqID`, `GetOwnF
 | Typing out | `SetTyping(ctx, shortID, bool)` (no-op when `DisableTyping` is set; fails before `Connect`) |
 | Search / new DM | `SearchUsers`, `GetUserForNewDM(ctx, fbid)`, `GetProfile`, `FetchThreadID(ctx, userFBID)` |
 | Reactions, edit, unsend | `SendReaction` (short ID), `EditMessage` (short ID, new OTID), `UnsendMessage` (**long** ID in `SendData.ThreadID`) |
+| Mute | `MuteThread` (short ID; `MuteSeconds` -1 forever, 0 unmutes; new OTID) |
 | Message requests | `AcceptMessageRequest` |
 | Media | `FetchMedia`; sending = `GetHTTP().SendMercuryUploadRequest` then `SendMedia` |
 | ID lookup | `FetchThreadID(ctx, threadKey)` → `ThreadIGIDs{LongID, ShortID}` (verified with 1:1 keys) |

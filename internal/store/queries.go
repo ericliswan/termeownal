@@ -68,7 +68,7 @@ func (s *Store) Snapshot(ctx context.Context, n int) (core.User, []core.Thread, 
 // readThreads returns every thread with its members, without messages.
 func readThreads(ctx context.Context, tx *sql.Tx) ([]core.Thread, error) {
 	rows, err := tx.QueryContext(ctx, `
-		SELECT thread_key, title, is_group, last_activity_ms, unread FROM threads
+		SELECT thread_key, title, is_group, last_activity_ms, unread, muted FROM threads
 		ORDER BY last_activity_ms DESC, thread_key`)
 	if err != nil {
 		return nil, err
@@ -78,7 +78,7 @@ func readThreads(ctx context.Context, tx *sql.Tx) ([]core.Thread, error) {
 	for rows.Next() {
 		var t core.Thread
 		var ms int64
-		if err := rows.Scan(&t.ID, &t.Title, &t.IsGroup, &ms, &t.Unread); err != nil {
+		if err := rows.Scan(&t.ID, &t.Title, &t.IsGroup, &ms, &t.Unread, &t.Muted); err != nil {
 			_ = rows.Close()
 			return nil, err
 		}
@@ -122,13 +122,23 @@ func readThreads(ctx context.Context, tx *sql.Tx) ([]core.Thread, error) {
 	return threads, rows.Err()
 }
 
-// PutThreads stores threads from a snapshot or a thread update: their
-// details, members and unread state, and the messages that come with them.
-// Cached threads missing from the list are kept.
+// PutThreads stores threads from a snapshot: their details, members, unread
+// and muted state, and the messages that come with them. Cached threads
+// missing from the list are kept.
 func (s *Store) PutThreads(ctx context.Context, threads []core.Thread) error {
+	return s.putThreads(ctx, threads, false)
+}
+
+// UpdateThread stores a thread like PutThreads, but keeps its cached muted
+// state: only a snapshot reports it (core.Thread.Muted).
+func (s *Store) UpdateThread(ctx context.Context, t core.Thread) error {
+	return s.putThreads(ctx, []core.Thread{t}, true)
+}
+
+func (s *Store) putThreads(ctx context.Context, threads []core.Thread, keepMuted bool) error {
 	err := inTx(ctx, s.db, func(tx *sql.Tx) error {
 		for _, t := range threads {
-			if err := putThread(ctx, tx, t); err != nil {
+			if err := putThread(ctx, tx, t, keepMuted); err != nil {
 				return fmt.Errorf("thread %d: %w", t.ID, err)
 			}
 		}
@@ -140,15 +150,16 @@ func (s *Store) PutThreads(ctx context.Context, threads []core.Thread) error {
 	return nil
 }
 
-func putThread(ctx context.Context, tx *sql.Tx, t core.Thread) error {
+func putThread(ctx context.Context, tx *sql.Tx, t core.Thread, keepMuted bool) error {
 	_, err := tx.ExecContext(ctx, `
-		INSERT INTO threads (thread_key, title, is_group, last_activity_ms, unread) VALUES (?, ?, ?, ?, ?)
+		INSERT INTO threads (thread_key, title, is_group, last_activity_ms, unread, muted) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
 		ON CONFLICT (thread_key) DO UPDATE SET
 			title = excluded.title,
 			is_group = excluded.is_group,
 			last_activity_ms = max(last_activity_ms, excluded.last_activity_ms),
-			unread = excluded.unread`,
-		t.ID, t.Title, t.IsGroup, t.LastActivity.UnixMilli(), t.Unread)
+			unread = excluded.unread,
+			muted = iif(?7, muted, excluded.muted)`,
+		t.ID, t.Title, t.IsGroup, t.LastActivity.UnixMilli(), t.Unread, t.Muted, keepMuted)
 	if err != nil {
 		return err
 	}
@@ -410,6 +421,15 @@ func (s *Store) MarkRead(ctx context.Context, thread core.ThreadID, until time.T
 		thread, until.UnixMilli())
 	if err != nil {
 		return fmt.Errorf("cache read state: %w", err)
+	}
+	return nil
+}
+
+// SetMuted records that the user muted or unmuted a thread. An unknown
+// thread is ignored; the next snapshot carries it.
+func (s *Store) SetMuted(ctx context.Context, thread core.ThreadID, muted bool) error {
+	if _, err := s.db.ExecContext(ctx, "UPDATE threads SET muted = ? WHERE thread_key = ?", muted, thread); err != nil {
+		return fmt.Errorf("cache muted: %w", err)
 	}
 	return nil
 }

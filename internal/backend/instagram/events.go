@@ -185,6 +185,10 @@ func (b *Backend) handleDelta(ctx context.Context, d *slidetypes.Delta) error {
 		if known {
 			return b.send(ctx, core.MessageUnsent{Thread: key, Message: core.MessageID(data.MessageID)})
 		}
+	case *slidetypes.MuteThreadEvent:
+		if known {
+			return b.send(ctx, core.ThreadMuted{Thread: key, Muted: data.IsMutedNow})
+		}
 	default:
 		b.log.Debug().Str("type", d.TypeName).Msg("delta ignored")
 	}

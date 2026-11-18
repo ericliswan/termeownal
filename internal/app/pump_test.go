@@ -291,7 +291,8 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	th.Title, th.Messages = "Renamed", nil
 	at := testNow.Add(time.Minute)
 	events := []core.Event{
-		core.ThreadUpdated{Thread: th},
+		core.ThreadMuted{Thread: th.ID, Muted: true},
+		core.ThreadUpdated{Thread: th}, // doesn't know it's muted
 		core.MessageAdded{Message: core.Message{ID: "mid.replayed", Thread: th.ID, Sender: th.Members[0].ID, At: at, Text: "hi"}},
 		core.MessageAdded{Message: core.Message{ID: "mid.unsent", Thread: th.ID, Sender: 1, At: at, Text: "oops"}},
 		core.ThreadRead{Thread: th.ID, Until: at},
@@ -322,6 +323,9 @@ func TestReplayedEventsChangeNothing(t *testing.T) {
 	got := cached[1][slices.IndexFunc(cached[1], func(t core.Thread) bool { return t.ID == 101 })]
 	if got.Unread {
 		t.Error("thread is unread after replaying its read")
+	}
+	if !got.Muted {
+		t.Error("thread update unmuted the thread")
 	}
 	if upTo := got.ReadUpTo[th.Members[0].ID]; !upTo.Equal(at) {
 		t.Errorf("member read up to %v, want %v", upTo, at)

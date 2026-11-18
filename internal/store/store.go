@@ -111,6 +111,8 @@ var migrations = []string{
 	ALTER TABLE messages ADD COLUMN unsent INTEGER NOT NULL DEFAULT 0;
 	DELETE FROM messages WHERE send_state = 0;
 	UPDATE threads SET history_complete = 0;`,
+	// 6: muted threads. Cached threads show unmuted until the next snapshot.
+	`ALTER TABLE threads ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;`,
 }
 
 // tables lists every table, for emptying the cache when the account changes.

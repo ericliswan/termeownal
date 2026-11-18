@@ -433,6 +433,38 @@ func TestPutThreadsUpdatesThread(t *testing.T) {
 	wantIDs(t, history(t, s, dm), "a1")
 }
 
+// Only a snapshot or SetMuted changes whether a thread is muted: a thread
+// update doesn't know.
+func TestMuted(t *testing.T) {
+	s := newStore(t)
+	ctx := t.Context()
+	dmThread := func(muted bool) core.Thread {
+		return core.Thread{ID: dm, Title: "Ana", Members: []core.User{ana}, LastActivity: at(1), Muted: muted}
+	}
+	steps := []struct {
+		name string
+		do   func() error
+		want bool
+	}{
+		{"snapshot, muted", func() error { return s.PutThreads(ctx, []core.Thread{dmThread(true)}) }, true},
+		{"update", func() error { return s.UpdateThread(ctx, dmThread(false)) }, true},
+		{"unmuted", func() error { return s.SetMuted(ctx, dm, false) }, false},
+		{"update says muted", func() error { return s.UpdateThread(ctx, dmThread(true)) }, false},
+		{"muted", func() error { return s.SetMuted(ctx, dm, true) }, true},
+		{"snapshot, unmuted", func() error { return s.PutThreads(ctx, []core.Thread{dmThread(false)}) }, false},
+		{"unknown thread", func() error { return s.SetMuted(ctx, group, true) }, false},
+	}
+	for _, st := range steps {
+		must(t, st.do())
+		if got := thread(t, s, dm).Muted; got != st.want {
+			t.Fatalf("after %s: muted = %v, want %v", st.name, got, st.want)
+		}
+	}
+	if _, threads, _ := s.Snapshot(ctx, 0); len(threads) != 1 {
+		t.Errorf("SetMuted on an unknown thread added one: %+v", threads)
+	}
+}
+
 func TestReplayChangesNothing(t *testing.T) {
 	s := newStore(t)
 	ctx := t.Context()

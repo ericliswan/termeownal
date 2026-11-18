@@ -55,6 +55,7 @@ func convertThread(t *slidetypes.ThreadInfo, me core.UserID, log zerolog.Logger)
 		IsGroup:      t.IsGroup || len(t.Users) > 1,
 		LastActivity: t.LastActivityTimestampMS.Time,
 		Unread:       true,
+		Muted:        t.IsMuted != nil && *t.IsMuted,
 	}
 	var names []string
 	for _, u := range t.Users {

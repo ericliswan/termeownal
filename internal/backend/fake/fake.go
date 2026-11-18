@@ -263,6 +263,18 @@ func (b *Backend) Unsend(_ context.Context, thread core.ThreadID, msg core.Messa
 	return b.echoLocked(core.MessageUnsent{Thread: thread, Message: msg})
 }
 
+// Mute mutes or unmutes a thread and queues the echo after EchoDelay.
+func (b *Backend) Mute(_ context.Context, thread core.ThreadID, muted bool) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, err := b.threadLocked(thread)
+	if err != nil {
+		return fmt.Errorf("fake: mute: %w", err)
+	}
+	t.Muted = muted
+	return b.echoLocked(core.ThreadMuted{Thread: thread, Muted: muted})
+}
+
 // ownMessageLocked finds one of the user's messages that isn't unsent.
 func (b *Backend) ownMessageLocked(thread core.ThreadID, msg core.MessageID) (*core.Message, error) {
 	t, err := b.threadLocked(thread)
