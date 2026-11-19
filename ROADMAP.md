@@ -591,10 +591,10 @@ Throwaway code in `spike/`. Goal: prove every core call works and learn the ID m
 ### Releases
 From v0.1.0 on, ship often: a release whenever features, fixes or polish land, not only at the end of a phase.
 - Versions are SemVer `v0.Y.Z` until 1.0: the minor goes up for new features, the patch for fixes only.
-- A release is a `vX.Y.Z` tag on `main`. Pushing it runs GoReleaser in CI, which builds macOS and Linux binaries (amd64 and arm64), publishes a GitHub Release with checksums, and updates the formula in `ericliswan/homebrew-tap`.
+- A release is a `vX.Y.Z` tag on `main`. Pushing it runs GoReleaser in CI, which builds macOS, Linux and Windows binaries (amd64 and arm64), publishes a GitHub Release with checksums, and updates the cask in `ericliswan/homebrew-tap` and the manifest in `ericliswan/scoop-bucket`.
 - Before tagging: CI green on `main`, the manual smoke test (§16) on the test account, and release notes listing what users will notice.
 - A bad release is fixed with a new patch release; published tags are never moved or deleted.
-- Windows isn't packaged (CI still cross-builds it). Binaries aren't signed or notarized yet.
+- Windows is packaged as zips and in the Scoop bucket, but is experimental until it's been used with a real account. Binaries aren't signed or notarized yet.
 
 ---
 
