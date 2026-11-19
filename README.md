@@ -79,7 +79,14 @@ On macOS or Linux, with [Homebrew](https://brew.sh):
 brew install ericliswan/tap/meow
 ```
 
-Or download the archive for your system from [Releases](https://github.com/ericliswan/termeownal/releases), unpack it and put `meow` on your `PATH`. On macOS, a downloaded binary isn't signed, so remove the quarantine flag first: `xattr -d com.apple.quarantine meow`. There are builds for macOS and Linux on amd64 and arm64; on Windows, build it yourself.
+On Windows, with [Scoop](https://scoop.sh) (experimental: Windows hasn't been tried with a real account yet):
+
+```powershell
+scoop bucket add ericliswan https://github.com/ericliswan/scoop-bucket
+scoop install meow
+```
+
+Or download the archive for your system from [Releases](https://github.com/ericliswan/termeownal/releases), unpack it and put `meow` on your `PATH`. There are builds for macOS, Linux and Windows on amd64 and arm64. The binaries aren't signed: on macOS, remove the quarantine flag first with `xattr -d com.apple.quarantine meow`; on Windows, SmartScreen may warn about `meow.exe` until you choose **More info → Run anyway**. Desktop notifications on Windows only work in a terminal that shows them itself.
 
 Try the UI without an account, with canned chats and no network: `meow --backend=fake`.
 

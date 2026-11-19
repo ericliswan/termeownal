@@ -10,7 +10,7 @@ builds:
     binary: meow
     env:
       - CGO_ENABLED=0
-    goos: [darwin, linux]
+    goos: [darwin, linux, windows]
     goarch: [amd64, arm64]
     flags: [-trimpath]
     ldflags:
@@ -18,6 +18,9 @@ builds:
 
 archives:
   - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
     files: [LICENSE, README.md]
 
 checksum:
@@ -47,3 +50,14 @@ homebrew_casks:
           on_macos do
             run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ .StagedPath }}/meow"]
           end
+
+scoops:
+  - name: meow
+    homepage: https://github.com/ericliswan/termeownal
+    description: Terminal client for Instagram DMs
+    license: AGPL-3.0-only
+    skip_upload: auto # not for prereleases
+    repository:
+      owner: ericliswan
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_TOKEN }}"
