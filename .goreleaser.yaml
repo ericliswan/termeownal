@@ -17,10 +17,20 @@ builds:
       - -s -w -X main.version={{ .Version }}
 
 archives:
-  - formats: [tar.gz]
+  # The tar.gz for macOS and Linux, and the zip for Windows, feed the
+  # Homebrew cask and the Scoop manifest, which take one archive per platform.
+  - id: default
+    formats: [tar.gz]
     format_overrides:
       - goos: windows
         formats: [zip]
+    files: [LICENSE, README.md]
+  # A zip for macOS and Linux too, for anyone who'd rather have one.
+  - id: zip
+    formats: [zip]
+    format_overrides:
+      - goos: windows
+        formats: [none] # already a zip above
     files: [LICENSE, README.md]
 
 checksum:
@@ -35,6 +45,7 @@ release:
 
 homebrew_casks:
   - name: meow
+    ids: [default]
     binaries: [meow]
     homepage: https://github.com/ericliswan/termeownal
     description: Terminal client for Instagram DMs
@@ -53,6 +64,7 @@ homebrew_casks:
 
 scoops:
   - name: meow
+    ids: [default]
     homepage: https://github.com/ericliswan/termeownal
     description: Terminal client for Instagram DMs
     license: AGPL-3.0-only
