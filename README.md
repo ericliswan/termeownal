@@ -73,22 +73,122 @@ termeownal talks to Instagram through [`instameow`](https://github.com/mautrix/m
 
 ## Installing
 
-On macOS or Linux, with [Homebrew](https://brew.sh):
+There are builds for macOS, Linux and Windows, on amd64 (Intel and AMD) and arm64 (Apple silicon and other ARM chips). Pick your system below. Then [log in](#logging-in), or try the UI without an account, with canned chats and no network: `meow --backend=fake`.
+
+### macOS
+
+With [Homebrew](https://brew.sh):
 
 ```sh
 brew install ericliswan/tap/meow
+meow --version   # check it worked
 ```
 
-On Windows, with [Scoop](https://scoop.sh) (experimental: Windows hasn't been tried with a real account yet):
+<details>
+<summary>Don't have Homebrew?</summary>
+
+Install it by pasting this into Terminal:
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+When it finishes, it prints a **Next steps** section with one or two commands that put `brew` on your `PATH`. Run those, open a new Terminal window, then run the `brew install` above.
+
+</details>
+
+### Linux
+
+Homebrew works on Linux too: install it as above (its installer says which system packages it needs first), then `brew install ericliswan/tap/meow`. Or [download the binary](#downloading-the-binary-yourself).
+
+### Windows (experimental)
+
+meow hasn't been used with a real account on Windows yet. If something doesn't work, please [open an issue](https://github.com/ericliswan/termeownal/issues). Use [Windows Terminal](https://aka.ms/terminal), which comes with Windows 11; the older console window may draw the UI wrongly.
+
+With [Scoop](https://scoop.sh), in PowerShell:
 
 ```powershell
+scoop install git   # Scoop needs Git to add a bucket; skip if you have it
 scoop bucket add ericliswan https://github.com/ericliswan/scoop-bucket
 scoop install meow
+meow --version      # check it worked
 ```
 
-Or download the archive for your system from [Releases](https://github.com/ericliswan/termeownal/releases) (a `.tar.gz` or a `.zip` on macOS and Linux, a `.zip` on Windows), unpack it and put `meow` on your `PATH`. There are builds for macOS, Linux and Windows on amd64 and arm64. The binaries aren't signed: on macOS, remove the quarantine flag first with `xattr -d com.apple.quarantine meow`; on Windows, SmartScreen may warn about `meow.exe` until you choose **More info → Run anyway**. Desktop notifications on Windows only work in a terminal that shows them itself.
+<details>
+<summary>Don't have Scoop?</summary>
 
-Try the UI without an account, with canned chats and no network: `meow --backend=fake`.
+Open PowerShell as yourself (not as administrator) and run:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+```
+
+The first line lets PowerShell run Scoop's installer script; answer `Y` if it asks. Then run the commands above.
+
+</details>
+
+Desktop notifications on Windows only work in a terminal that shows them itself.
+
+### Downloading the binary yourself
+
+Download the archive for your system from the [latest release](https://github.com/ericliswan/termeownal/releases/latest). Its name says the system and the chip:
+
+| System | Chip | Archive |
+|---|---|---|
+| macOS | Apple silicon (M1 and later) | `meow_<version>_darwin_arm64.tar.gz` |
+| macOS | Intel | `meow_<version>_darwin_amd64.tar.gz` |
+| Linux | x86-64 | `meow_<version>_linux_amd64.tar.gz` |
+| Linux | ARM64 (e.g. Raspberry Pi 4 and later, 64-bit OS) | `meow_<version>_linux_arm64.tar.gz` |
+| Windows | x64 (most PCs) | `meow_<version>_windows_amd64.zip` |
+| Windows | ARM (e.g. Snapdragon laptops) | `meow_<version>_windows_arm64.zip` |
+
+macOS and Linux also have a `.zip` of each, with the same contents. Not sure which chip you have? On macOS or Linux, run `uname -m`: `arm64` or `aarch64` means arm64, `x86_64` means amd64. On Windows, run `$env:PROCESSOR_ARCHITECTURE` in PowerShell: `AMD64` or `ARM64`.
+
+**macOS and Linux**, in a terminal, in the folder you downloaded to:
+
+```sh
+tar -xzf meow_*_darwin_arm64.tar.gz      # use the name of the file you downloaded
+xattr -d com.apple.quarantine meow       # macOS, downloaded with a browser: the binary isn't signed
+sudo mkdir -p /usr/local/bin
+sudo mv meow /usr/local/bin/
+meow --version
+```
+
+**Windows**, in PowerShell, in the folder you downloaded to:
+
+```powershell
+Expand-Archive meow_*_windows_amd64.zip -DestinationPath meow   # use the name of the file you downloaded
+Unblock-File meow\meow.exe   # the binary isn't signed; this stops SmartScreen warning about it
+$dir = "$env:LOCALAPPDATA\Programs\meow"
+New-Item -ItemType Directory -Force $dir | Out-Null
+Move-Item -Force meow\meow.exe $dir
+[Environment]::SetEnvironmentVariable("Path", [Environment]::GetEnvironmentVariable("Path", "User") + ";$dir", "User")
+```
+
+Then open a new terminal, so it sees the new `Path`, and run `meow --version`. If you start `meow.exe` from File Explorer instead and SmartScreen says "Windows protected your PC", choose **More info → Run anyway**.
+
+### Updating
+
+| Installed with | Update with |
+|---|---|
+| Homebrew | `brew upgrade meow` |
+| Scoop | `scoop update meow` |
+| a download | download the new archive and repeat the steps above |
+
+Your login and cache are kept.
+
+### Uninstalling
+
+First run `meow logout --purge`, which deletes your saved session, its key in the OS keyring, and the message cache. Then:
+
+| Installed with | Remove with |
+|---|---|
+| Homebrew | `brew uninstall meow` |
+| Scoop | `scoop uninstall meow` |
+| a download | delete the `meow` binary (`/usr/local/bin/meow`, or `%LOCALAPPDATA%\Programs\meow` on Windows) |
+
+`config.toml` and `meow.log` stay behind; [Where your data lives](#where-your-data-lives) says where they are.
 
 ## Building
 
