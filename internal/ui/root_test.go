@@ -1172,3 +1172,27 @@ func TestOthersMessagesCantBeEditedOrUnsent(t *testing.T) {
 		t.Fatalf("their unsend not shown: %+v", got)
 	}
 }
+
+func TestPasteIntoComposer(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter")
+	id, _ := h.m.chat.Thread()
+	h.do(tea.PasteMsg{Content: "pasted\r\nline two"})
+	if got := h.m.composer.Value(); got != "pasted\nline two" {
+		t.Fatalf("composer = %q after a paste, want the pasted text", got)
+	}
+	if want := []core.Typing{{Thread: id, Active: true}}; !slices.Equal(h.act.typing, want) {
+		t.Fatalf("typing calls %+v after a paste, want %+v", h.act.typing, want)
+	}
+	h.press("enter")
+	h.wantOne("pasted\nline two", core.Sending)
+}
+
+func TestPasteOutsideComposerIgnored(t *testing.T) {
+	h := newHarness(t, 100, 30)
+	h.press("enter", "shift+tab")
+	h.do(tea.PasteMsg{Content: "nope"})
+	if got := h.m.composer.Value(); got != "" {
+		t.Fatalf("composer = %q after a paste in the messages pane, want empty", got)
+	}
+}

@@ -275,6 +275,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyPressMsg:
 		return m.key(msg)
+	case tea.PasteMsg:
+		return m.paste(msg)
 	case composer.SubmitMsg:
 		id, ok := m.chat.Thread()
 		if !ok {
@@ -447,6 +449,22 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// paste puts pasted text in the composer when it has focus and nothing is
+// open over it, as typing would. Bubble Tea sends a bracketed paste as one
+// PasteMsg, not as key presses. Elsewhere a paste is ignored, except that it
+// cancels a pending unsend like any key but y.
+func (m Model) paste(p tea.PasteMsg) (tea.Model, tea.Cmd) {
+	m.errText = ""
+	m.unsendTo = core.Message{}
+	if m.help || m.reactTo.ID != "" || m.focus != paneComposer {
+		return m, nil
+	}
+	// Terminals send line breaks as \r or \r\n; the text box turns each \r
+	// and \n into a new line, so a \r\n would make two.
+	p.Content = strings.ReplaceAll(p.Content, "\r\n", "\n")
+	return m, m.compose(p)
+}
+
 func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	s := k.String()
 	if s == "ctrl+c" {
@@ -550,16 +568,24 @@ func (m Model) key(k tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		m.chat, cmd = m.chat.Update(k)
 	case paneComposer:
-		h, text := m.composer.Height(), m.composer.Value()
-		m.composer, cmd = m.composer.Update(k)
-		if m.composer.Height() != h {
-			m.layout()
-		}
-		if m.composer.Value() != text {
-			cmd = tea.Batch(cmd, m.typed())
-		}
+		return m, m.compose(k)
 	}
 	return m, cmd
+}
+
+// compose passes a key or a paste to the composer, then fits the layout to
+// its height and tells the thread the user is typing if the text changed.
+func (m *Model) compose(msg tea.Msg) tea.Cmd {
+	h, text := m.composer.Height(), m.composer.Value()
+	var cmd tea.Cmd
+	m.composer, cmd = m.composer.Update(msg)
+	if m.composer.Height() != h {
+		m.layout()
+	}
+	if m.composer.Value() != text {
+		cmd = tea.Batch(cmd, m.typed())
+	}
+	return cmd
 }
 
 // typed tells the open thread the user is typing after an edit: a start at
